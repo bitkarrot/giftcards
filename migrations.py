@@ -20,13 +20,16 @@ async def m001_initial(db):
         );
         """
     )
+    # SQLite cannot create indexes with a schema prefix on an attached database,
+    # so use the db-specific table reference.
+    table = f"{db.references_schema}cards"
     await db.execute(
-        """
-        CREATE INDEX idx_giftcards_cards_wallet ON giftcards.cards(wallet);
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_giftcards_cards_wallet ON {table}(wallet);
         """
     )
     await db.execute(
-        """
-        CREATE INDEX idx_giftcards_cards_status_expires ON giftcards.cards(status, expires_at);
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_giftcards_cards_status_expires ON {table}(status, expires_at);
         """
     )
