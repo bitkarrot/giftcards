@@ -7,16 +7,16 @@
 
 ### Gift Card Creation (GCARD)
 
-- [ ] **GCARD-01**: Issuer can create a single gift card with a fixed sats amount.
-- [ ] **GCARD-02**: Issuer can set an expiration date on a gift card at creation time.
-- [ ] **GCARD-03**: Issuer can add recipient name, sender name, and a personal message to a gift card.
-- [ ] **GCARD-04**: Each gift card receives a unique, unguessable redemption token and a shareable redemption link.
-- [ ] **GCARD-05**: Issuer wallet is debited the gift card amount when the card is created (locked funding).
+- [x] **GCARD-01**: Issuer can create a single gift card with a fixed sats amount.
+- [x] **GCARD-02**: Issuer can set an expiration date on a gift card at creation time.
+- [x] **GCARD-03**: Issuer can add recipient name, sender name, and a personal message to a gift card.
+- [x] **GCARD-04**: Each gift card receives a unique, unguessable redemption token and a shareable redemption link.
+- [x] **GCARD-05**: Issuer wallet is debited the gift card amount when the card is created (locked funding).
 
 ### Redemption (REDM)
 
-- [ ] **REDM-01**: Recipient can open the unique redemption link and view the gift card value and sender message.
-- [ ] **REDM-02**: Recipient can redeem the gift card by scanning the QR code with a Lightning wallet.
+- [x] **REDM-01**: Recipient can open the unique redemption link and view the gift card value and sender message.
+- [x] **REDM-02**: Recipient can redeem the gift card by scanning the QR code with a Lightning wallet.
 - [x] **REDM-03**: Each gift card can only be redeemed once; concurrent redemption attempts do not double-spend.
 - [x] **REDM-04**: Expired gift cards cannot be redeemed and display an expired status to the recipient.
 - [x] **REDM-05**: Sats from unclaimed, expired gift cards are automatically returned to the issuer wallet.
@@ -78,13 +78,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GCARD-01 | Phase 1 | Pending |
-| GCARD-02 | Phase 1 | Pending |
-| GCARD-03 | Phase 1 | Pending |
-| GCARD-04 | Phase 1 | Pending |
-| GCARD-05 | Phase 1 | Pending |
-| REDM-01 | Phase 1 | Pending |
-| REDM-02 | Phase 1 | Pending |
+| GCARD-01 | Phase 1 | Complete |
+| GCARD-02 | Phase 1 | Complete |
+| GCARD-03 | Phase 1 | Complete |
+| GCARD-04 | Phase 1 | Complete |
+| GCARD-05 | Phase 1 | Complete |
+| REDM-01 | Phase 1 | Complete |
+| REDM-02 | Phase 1 | Complete |
 | REDM-03 | Phase 1 | Complete |
 | REDM-04 | Phase 1 | Complete |
 | REDM-05 | Phase 1 | Complete |
@@ -114,4 +114,4 @@
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after roadmap creation (Phase 1: 10 reqs, Phase 2: 7 reqs, Phase 3: 10 reqs)*
+*Last updated: 2026-06-29 after Phase 1 verification — all 10 Phase 1 requirements marked Complete (Phase 2: 7 reqs, Phase 3: 10 reqs)*
