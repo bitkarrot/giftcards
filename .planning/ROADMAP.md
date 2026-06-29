@@ -13,7 +13,7 @@ Build a complete Bitcoin Lightning gift card system as a LNBits extension. The j
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Loop** - Issuer can create a funded gift card and a recipient can redeem it end-to-end
+- [x] **Phase 1: Core Loop** - Issuer can create a funded gift card and a recipient can redeem it end-to-end (completed 2026-06-29)
 - [ ] **Phase 2: Branded Delivery** - Issuer can design a branded card image and deliver it via email, nostr, or printable download
 - [ ] **Phase 3: Scale & Manage** - Issuer can bulk-create cards, automate via REST API, and manage card status from a dashboard
 
@@ -33,13 +33,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A card that has already been redeemed cannot be redeemed again, and concurrent redemption attempts do not result in double-spend.
   5. An expired card displays an expired status and cannot be redeemed; any locked sats are automatically returned to the issuer wallet.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 
 - [x] 01-01-PLAN.md — Walking skeleton: create, fund, and redeem a gift card end-to-end ✅ 2026-06-29
 - [x] 01-02-PLAN.md — Harden redemption: atomic guard, concurrency, and failure recovery ✅ 2026-06-29
-- [ ] 01-03-PLAN.md — Expiry sweep, sats reclaim, and security acceptance review
+- [x] 01-03-PLAN.md — Expiry sweep, sats reclaim, and security acceptance review
 
 **UI hint**: yes
 
@@ -82,6 +82,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Loop | 2/3 | In Progress|  |
+| 1. Core Loop | 3/3 | Complete   | 2026-06-29 |
 | 2. Branded Delivery | 0/TBD | Not started | - |
 | 3. Scale & Manage | 0/TBD | Not started | - |
