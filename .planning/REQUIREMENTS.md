@@ -17,7 +17,7 @@
 
 - [ ] **REDM-01**: Recipient can open the unique redemption link and view the gift card value and sender message.
 - [ ] **REDM-02**: Recipient can redeem the gift card by scanning the QR code with a Lightning wallet.
-- [ ] **REDM-03**: Each gift card can only be redeemed once; concurrent redemption attempts do not double-spend.
+- [x] **REDM-03**: Each gift card can only be redeemed once; concurrent redemption attempts do not double-spend.
 - [ ] **REDM-04**: Expired gift cards cannot be redeemed and display an expired status to the recipient.
 - [ ] **REDM-05**: Sats from unclaimed, expired gift cards are automatically returned to the issuer wallet.
 
@@ -85,7 +85,7 @@
 | GCARD-05 | Phase 1 | Pending |
 | REDM-01 | Phase 1 | Pending |
 | REDM-02 | Phase 1 | Pending |
-| REDM-03 | Phase 1 | Pending |
+| REDM-03 | Phase 1 | Complete |
 | REDM-04 | Phase 1 | Pending |
 | REDM-05 | Phase 1 | Pending |
 | DELV-01 | Phase 2 | Pending |
@@ -107,6 +107,7 @@
 | DASH-03 | Phase 3 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 27 total
 - Mapped to phases: 27
 - Unmapped: 0 ✓
