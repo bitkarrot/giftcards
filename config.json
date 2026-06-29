@@ -1,0 +1,6 @@
+{
+  "name": "Gift Cards",
+  "icon": "card_giftcard",
+  "description": "Create and redeem sats-denominated gift cards with unique secure links",
+  "version": "0.1.0"
+}
