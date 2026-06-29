@@ -5,7 +5,7 @@
       <q-card class="q-pa-lg" v-if="loading">
         <q-card-section class="q-pa-none">
           <div class="text-center">
-            <q-spinner color="primary" size="48px" />
+            <q-spinner color="primary" size="48px"></q-spinner>
           </div>
         </q-card-section>
       </q-card>
@@ -14,7 +14,7 @@
       <q-card class="q-pa-lg" v-else-if="giftCard && giftCard.status === 'active' && error">
         <q-card-section class="q-pa-none">
           <div class="text-center">
-            <q-icon name="error_outline" color="negative" size="64px" />
+            <q-icon name="error_outline" color="negative" size="64px"></q-icon>
             <h5 class="text-h6 q-mt-md">Redemption failed</h5>
             <p class="text-body2 text-grey">
               Redemption failed. Please scan the QR code again or try a different wallet.
@@ -49,7 +49,7 @@
               For {{ giftCard.recipient_name }}
             </p>
             
-            <q-separator class="q-my-md" />
+            <q-separator class="q-my-md"></q-separator>
             
             <p class="text-body2 q-mt-md">
               Scan with your Lightning wallet to redeem:
@@ -75,7 +75,7 @@
               Redeem via Lightning Wallet
             </q-btn>
             
-            <q-separator class="q-my-md" />
+            <q-separator class="q-my-md"></q-separator>
             
             <p class="text-caption">
               Expires: {{ giftCard.expires_at ? formatDate(giftCard.expires_at) : 'No expiration' }}
@@ -88,7 +88,7 @@
       <q-card class="q-pa-lg" v-else-if="giftCard && giftCard.status === 'redeemed'">
         <q-card-section class="q-pa-none">
           <div class="text-center">
-            <q-icon name="check_circle" color="positive" size="64px" />
+            <q-icon name="check_circle" color="positive" size="64px"></q-icon>
             <h5 class="text-h6 q-mt-md">This gift card has been redeemed</h5>
             <p class="text-body2 text-grey">
               This card was already redeemed. If you believe this is an error, contact the sender.
@@ -101,7 +101,7 @@
       <q-card class="q-pa-lg" v-else-if="giftCard && giftCard.status === 'expired'">
         <q-card-section class="q-pa-none">
           <div class="text-center">
-            <q-icon name="schedule" color="warning" size="64px" />
+            <q-icon name="schedule" color="warning" size="64px"></q-icon>
             <h5 class="text-h6 q-mt-md">This gift card has expired</h5>
             <p class="text-body2 text-grey">
               The card expired on {{ formatDate(giftCard.expired_at) }}. The sats have been returned to the issuer.
@@ -114,7 +114,7 @@
       <q-card class="q-pa-lg" v-else>
         <q-card-section class="q-pa-none">
           <div class="text-center">
-            <q-icon name="error_outline" color="negative" size="64px" />
+            <q-icon name="error_outline" color="negative" size="64px"></q-icon>
             <h5 class="text-h6 q-mt-md">Gift card not found</h5>
             <p class="text-body2 text-grey">
               This link may be invalid or the card may have been removed. Check the link and try again.

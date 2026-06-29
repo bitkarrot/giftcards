@@ -1,7 +1,7 @@
 async def m001_initial(db):
     await db.execute(
         """
-        CREATE TABLE giftcards.cards (
+        CREATE TABLE IF NOT EXISTS giftcards.cards (
             id            TEXT PRIMARY KEY,
             wallet        TEXT NOT NULL,
             card_wallet_id TEXT,
@@ -32,4 +32,14 @@ async def m001_initial(db):
         f"""
         CREATE INDEX IF NOT EXISTS idx_giftcards_cards_status_expires ON {table}(status, expires_at);
         """
+    )
+
+
+async def m002_add_raw_token(db):
+    """Store raw_token and redemption_url so links can be retrieved later by the issuer."""
+    await db.execute(
+        "ALTER TABLE giftcards.cards ADD COLUMN raw_token TEXT"
+    )
+    await db.execute(
+        "ALTER TABLE giftcards.cards ADD COLUMN redemption_url TEXT"
     )

@@ -115,3 +115,4 @@
 ---
 *Requirements defined: 2026-06-29*
 *Last updated: 2026-06-29 after Phase 1 verification — all 10 Phase 1 requirements marked Complete (Phase 2: 7 reqs, Phase 3: 10 reqs)*
+*Post-session update: 2026-06-29 — Architecture changed to no per-card wallets (withdraw extension pattern). raw_token now stored in DB (migration m002) for redemption_url reconstruction. GCARD-05 still satisfied: issuer wallet debited at creation time.*

@@ -52,7 +52,7 @@ async def test_gift_card_model():
     card = GiftCard(
         id="gc_test123",
         wallet="wallet_123",
-        card_wallet_id="card_wallet_456",
+        card_wallet_id=None,
         amount=1000,
         token_hash="abcd1234" * 8,  # 64 chars
         status="active",

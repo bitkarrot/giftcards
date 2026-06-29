@@ -13,7 +13,7 @@ from giftcards.crud import (
     get_expired_active_cards,
     mark_card_expired,
 )
-from giftcards.migrations import m001_initial
+from giftcards.migrations import m001_initial, m002_add_raw_token
 from giftcards.models import GiftCard
 from giftcards.services import generate_token, reclaim_card_sats
 from giftcards.tasks import _expire_gift_cards
@@ -23,6 +23,7 @@ from giftcards.views_api import lnurl_callback
 async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
+    await m002_add_raw_token(db)
 
 
 async def _make_card(
@@ -116,19 +117,16 @@ async def test_expired_card_reclaims_sats():
     past = datetime.now() - timedelta(hours=1)
     card = await _make_card(
         wallet_id="wallet_issuer",
-        card_wallet_id="wallet_card",
+        card_wallet_id=None,
         amount=1000,
         expires_at=past,
     )
 
     issuer_wallet = _wallet_mock("wallet_issuer", balance_msat=500_000)
-    card_wallet = _wallet_mock("wallet_card", balance_msat=1_000_000)
 
     def _get_wallet(wallet_id: str):
         if wallet_id == card.wallet:
             return issuer_wallet
-        if wallet_id == card.card_wallet_id:
-            return card_wallet
         return None
 
     balance_changes: list[tuple[str, int]] = []
@@ -145,7 +143,6 @@ async def test_expired_card_reclaims_sats():
     assert updated.status == "expired"
     assert updated.expired_at is not None
 
-    assert ("wallet_card", -1000) in balance_changes, "card wallet should be debited"
     assert ("wallet_issuer", 1000) in balance_changes, "issuer wallet should be credited"
 
     # LNURL callback should now reject the card

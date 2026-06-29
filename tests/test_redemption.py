@@ -15,7 +15,7 @@ from giftcards.crud import (
     mark_redeeming,
     reset_card_to_active,
 )
-from giftcards.migrations import m001_initial
+from giftcards.migrations import m001_initial, m002_add_raw_token
 from giftcards.models import GiftCard
 from giftcards.services import generate_token, pay_and_complete
 from giftcards.views_api import lnurl_callback
@@ -24,6 +24,7 @@ from giftcards.views_api import lnurl_callback
 async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
+    await m002_add_raw_token(db)
 
 
 async def _make_card(status="active") -> GiftCard:
@@ -31,7 +32,7 @@ async def _make_card(status="active") -> GiftCard:
     card = GiftCard(
         id=f"gc_{token_hash[:16]}",
         wallet="wallet_test",
-        card_wallet_id="wallet_card",
+        card_wallet_id=None,
         amount=1000,
         token_hash=token_hash,
         status=status,
@@ -51,7 +52,7 @@ def _payment(card, bolt11, status):
     return Payment(
         checking_id="chk_test",
         payment_hash="ph_test",
-        wallet_id=card.card_wallet_id or card.wallet,
+        wallet_id=card.wallet,
         amount=-card.amount * 1000,
         fee=0,
         bolt11=bolt11,
@@ -70,7 +71,7 @@ async def clean_table():
 @pytest.fixture
 def wallet_mock():
     wallet = MagicMock()
-    wallet.id = "wallet_card"
+    wallet.id = "wallet_test"
     wallet.can_send_payments = True
     return wallet
 

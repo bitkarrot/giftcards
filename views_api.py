@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
@@ -99,13 +99,17 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
         raise HTTPException(status_code=404, detail="Gift card not found")
     
     # Determine status
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if card.status == "expired":
         status = "expired"
     elif card.status == "redeemed":
         status = "redeemed"
-    elif card.expires_at and now > card.expires_at:
-        status = "expired"
+    elif card.expires_at:
+        expires = card.expires_at if card.expires_at.tzinfo else card.expires_at.replace(tzinfo=timezone.utc)
+        if now > expires:
+            status = "expired"
+        else:
+            status = "active"
     else:
         status = "active"
 
@@ -136,7 +140,7 @@ async def lnurl_params(
     callback_url = str(request.url_for("giftcards.lnurl_callback"))
 
     return LnurlWithdrawResponse(
-        callback=CallbackUrl(callback_url),
+        callback=CallbackUrl(callback_url, scheme=request.url.scheme),
         k1=token_hash,
         tag="withdrawRequest",
         minWithdrawable=MilliSatoshi(card.amount * 1000),
@@ -145,7 +149,7 @@ async def lnurl_params(
     )
 
 
-@giftcards_lnurl_router.get("/callback")
+@giftcards_lnurl_router.get("/callback", name="giftcards.lnurl_callback")
 async def lnurl_callback(
     pr: str | None = None,
     k1: str | None = None,
@@ -204,9 +208,13 @@ async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Gift card not found")
     
     # Check if card is active and not expired
-    now = datetime.now()
-    if card.status != "active" or (card.expires_at and now > card.expires_at):
+    now = datetime.now(timezone.utc)
+    if card.status != "active":
         raise HTTPException(status_code=410, detail="Gift card is not redeemable")
+    if card.expires_at:
+        expires = card.expires_at if card.expires_at.tzinfo else card.expires_at.replace(tzinfo=timezone.utc)
+        if now > expires:
+            raise HTTPException(status_code=410, detail="Gift card is not redeemable")
 
     # Build LNURL URL
     lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"

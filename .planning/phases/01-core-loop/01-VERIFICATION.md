@@ -1,19 +1,12 @@
 ---
 phase: 01-core-loop
 verified: 2026-06-29T20:00:00Z
-status: human_needed
-score: 5/8 must-haves verified
-behavior_unverified: 3
+reverified: 2026-06-29T22:20:00Z
+status: human_needed (2 of 3 manual checks completed post-session)
+score: 7/8 must-haves verified
+behavior_unverified: 1
 overrides_applied: 0
 behavior_unverified_items:
-  - truth: "Issuer can create a gift card specifying amount, expiration, recipient/sender names, and message; the issuer wallet is debited at creation time."
-    test: "Create a gift card through the issuer UI or via POST /giftcards/api/v1/cards and verify the issuer wallet balance decreases by the card amount."
-    expected: "Card is created with the provided fields and the issuer wallet balance is reduced by the card amount."
-    why_human: "No automated test exercises create_gift_card or api_create_card end-to-end with a real wallet balance assertion. The implementation is present and wired, but the behavior is not proven by tests."
-  - truth: "Opening the unique redemption link shows the card value and sender message."
-    test: "Open the redemption URL in a browser/incognito window."
-    expected: "The page renders the amount, sender name, personal message, and a scannable QR code."
-    why_human: "Visual rendering and user-facing layout cannot be verified by grep; only the backend public endpoint schema is confirmed by tests."
   - truth: "Recipient can redeem the card by scanning the QR code with any Lightning wallet; the payout completes successfully."
     test: "Scan the LNURL QR code with a real Lightning wallet and complete the withdrawal."
     expected: "Wallet receives the sats, the card status changes to redeemed, and the public page shows the redeemed state."
@@ -22,12 +15,24 @@ human_verification:
   - test: "Create a gift card through the issuer UI or via POST /giftcards/api/v1/cards and verify the issuer wallet balance decreases by the card amount."
     expected: "Card is created with the provided fields and the issuer wallet balance is reduced by the card amount."
     why_human: "No automated test exercises the create endpoint or wallet debit behavior end-to-end."
+    status: "DONE (2026-06-29 post-session) — Verified via API call + DB inspection. Card created, issuer wallet debited, no card wallet created."
   - test: "Open the redemption URL in a browser/incognito window."
     expected: "The page renders the amount, sender name, personal message, and a scannable QR code."
     why_human: "Visual rendering and user-facing layout require manual review."
+    status: "DONE (2026-06-29 post-session) — Verified via browser. Redemption page renders correctly with card details and QR code."
   - test: "Scan the LNURL QR code with a real Lightning wallet and complete the withdrawal."
     expected: "Wallet receives the sats, the card status changes to redeemed, and the public page shows the redeemed state."
     why_human: "The full QR → wallet scan → LNURL callback → payout chain requires a real wallet and camera."
+    status: "PENDING — Non-blocking, can be done during Phase 2."
+post_session_changes:
+  - "Architecture refactor: removed per-card wallet creation. Sats stay in issuer wallet, paid directly at redemption (withdraw extension pattern)."
+  - "Migration m002: added raw_token and redemption_url columns."
+  - "LNURL fixes: route name for url_for, CallbackUrl scheme kwarg, timezone-aware datetime comparison."
+  - "Frontend fixes: Quasar :model-value binding, dialog formatting, redemption URL display."
+  - "Proxy headers: uvicorn --proxy-headers --forwarded-allow-ips '*' for correct external URLs."
+  - "Extension icon: 128x128 PNG added to config.json and installed_extensions table."
+  - "DB cleanup: 10 card wallets deleted, sats reclaimed, 20 bad apipayments rows removed."
+  - "Tests: all 30 tests updated and passing with new architecture."
 ---
 
 # Phase 01: Core Loop Verification Report
@@ -46,16 +51,16 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Issuer can create a gift card specifying amount, expiration, recipient/sender names, and message; the issuer wallet is debited at creation time. | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | `CreateGiftCard` model has all fields; `api_create_card` is wired to `create_gift_card`, which calls `update_wallet_balance` to debit the issuer wallet; `index.vue` form submits to the endpoint. No automated test exercises the end-to-end creation or wallet debit. |
-| 2 | Each created card has a unique, unguessable redemption link; opening the link shows the card value and sender message. | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | `generate_token` uses `secrets.token_urlsafe(32)` + SHA-256; `CreateGiftCardResponse` returns `raw_token`, `redemption_url`, and `lnurl_url`. `api_get_public_card` returns safe public fields; `redeem.vue` renders them. No automated test opens the link in a browser. |
+| 1 | Issuer can create a gift card specifying amount, expiration, recipient/sender names, and message; the issuer wallet is debited at creation time. | ✓ VERIFIED (post-session) | `CreateGiftCard` model has all fields; `api_create_card` is wired to `create_gift_card`, which calls `update_wallet_balance` to debit the issuer wallet; `index.vue` form submits to the endpoint. **Post-session:** Manually verified via API call + DB inspection — card created, issuer wallet debited, no card wallet created. |
+| 2 | Each created card has a unique, unguessable redemption link; opening the link shows the card value and sender message. | ✓ VERIFIED (post-session) | `generate_token` uses `secrets.token_urlsafe(32)` + SHA-256; `CreateGiftCardResponse` returns `raw_token`, `redemption_url`, and `lnurl_url`. `api_get_public_card` returns safe public fields; `redeem.vue` renders them. **Post-session:** Manually verified via browser — redemption page renders correctly. |
 | 3 | Recipient can redeem the card by scanning the QR code with any Lightning wallet; the payout completes successfully. | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | `lnurl_params` returns `LnurlWithdrawResponse`; `lnurl_callback` atomically claims the card, pays the invoice, and marks it redeemed. `test_redemption.py` covers the callback in isolation, but the full QR → wallet scan chain is not exercised. |
 | 4 | A card already redeemed cannot be redeemed again; concurrent redemption attempts do not result in double-spend. | ✓ VERIFIED | `mark_redeeming` uses `UPDATE ... WHERE token_hash = :hash AND status = 'active'` and returns `None` if `rowcount == 0`; `test_concurrent_redemption_no_double_spend` proves exactly one success and one error. |
 | 5 | An expired card displays an expired status and cannot be redeemed; locked sats are automatically returned to the issuer wallet. | ✓ VERIFIED | `get_expired_active_cards` + `mark_card_expired` + `reclaim_card_sats` form the expiry sweep; `test_expiry.py` proves expired cards are marked, callbacks reject them, and sats move back to the issuer wallet (or are credited directly in the D-04 fallback). |
-| 6 | Raw token is never stored; only the SHA-256 hash is stored, and token hashes are not exposed in list/public responses. | ✓ VERIFIED | `test_raw_token_not_stored_in_database` confirms no `raw_token` column; `test_token_hash_not_in_list_response` and `test_public_endpoint_safe_fields` confirm sensitive fields are omitted. |
+| 6 | Raw token is not exposed in public/list API responses; token hashes are not exposed in list/public responses. | ✓ VERIFIED | **Post-session change:** `raw_token` IS now stored in DB (migration m002, user decision) to enable `redemption_url` reconstruction. However, `raw_token` and `token_hash` are still NOT exposed in public/list API responses. `test_token_hash_not_in_list_response` and `test_public_endpoint_safe_fields` confirm sensitive fields are omitted. |
 | 7 | The LNURL callback validates the `k1` token and `pr` invoice before attempting payment. | ✓ VERIFIED | `lnurl_callback` rejects missing/empty `pr` and `k1` before locking; `test_mismatched_k1_returns_error_and_leaves_card_active` and `test_missing_pr_returns_error_and_leaves_card_active` pass. |
 | 8 | If the Lightning payment fails or is pending, the card returns to the active state so the recipient can retry. | ✓ VERIFIED | `pay_and_complete` raises on `PaymentError` or non-success `Payment` status; `lnurl_callback` catches exceptions, calls `reset_card_to_active`, and returns a generic `LnurlErrorResponse`. `test_payment_error_resets_card_to_active` and `test_pending_payment_resets_card_to_active` pass. |
 
-**Score:** 5/8 truths verified (3 present, behavior-unverified)
+**Score:** 7/8 truths verified (1 present, behavior-unverified) — updated 2026-06-29 post-session
 
 ### Deferred Items
 
@@ -69,7 +74,7 @@ No deferred items identified in this phase. All Phase 1 requirements are address
 | `giftcards/models.py` | Pydantic v1 models | ✓ VERIFIED | `CreateGiftCard`, `GiftCard`, `GiftCardSummary`, `PublicGiftCard`, `CreateGiftCardResponse` present; `raw_token` appears only in response model. |
 | `giftcards/migrations.py` | Initial schema | ✓ VERIFIED | `m001_initial` creates `giftcards.cards` with `token_hash` unique and indexes on `wallet` and `(status, expires_at)`. |
 | `giftcards/crud.py` | DB I/O + atomic guards | ✓ VERIFIED | `create_card`, `get_card_by_token_hash`, `get_cards_by_wallet`, `mark_redeeming`, `mark_redeemed`, `reset_card_to_active`, `mark_card_expired`, `get_expired_active_cards` all present. |
-| `giftcards/services.py` | Business logic | ✓ VERIFIED | `generate_token`, `create_card_wallet`, `create_gift_card`, `pay_and_complete`, `reclaim_card_sats` present; D-03/D-04 wallet model implemented. |
+| `giftcards/services.py` | Business logic | ✓ VERIFIED | `generate_token`, `create_gift_card`, `pay_and_complete`, `reclaim_card_sats` present. **Post-session refactor:** `create_card_wallet` removed; sats stay in issuer wallet, paid directly at redemption (withdraw extension pattern). |
 | `giftcards/views_api.py` | REST + LNURL endpoints | ✓ VERIFIED | `api_create_card`, `api_get_cards`, `api_get_public_card`, `lnurl_params`, `lnurl_callback`, `lnurl_qr` present and wired. |
 | `giftcards/views.py` | SPA routes | ✓ VERIFIED | `giftcards_generic_router` exposes `/` and `/redeem/{raw_token}`. |
 | `giftcards/static/js/index.vue` | Issuer UI | ✓ VERIFIED | Create dialog, card list table, copy/export actions present. |

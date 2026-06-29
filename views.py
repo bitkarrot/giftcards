@@ -1,17 +1,20 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from lnbits.core.views.generic import index, index_public
+from lnbits.decorators import check_user_exists
 
 giftcards_generic_router = APIRouter()
 
 
-@giftcards_generic_router.get("/")
-async def index():
-    """Serve the issuer SPA page."""
-    # LNBits will serve the Vue SPA from the static directory
-    return {"message": "Gift Cards Extension"}
+giftcards_generic_router.add_api_route(
+    "/",
+    methods=["GET"],
+    endpoint=index,
+    dependencies=[Depends(check_user_exists)],
+)
 
 
-@giftcards_generic_router.get("/redeem/{raw_token}")
-async def index_public(raw_token: str):
-    """Serve the public redemption SPA page."""
-    # LNBits will serve the Vue SPA from the static directory
-    return {"message": "Public Gift Card Redemption"}
+giftcards_generic_router.add_api_route(
+    "/redeem/{raw_token}",
+    methods=["GET"],
+    endpoint=index_public,
+)

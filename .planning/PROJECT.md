@@ -64,6 +64,9 @@ Anyone can create and redeem a sats-denominated gift card with a unique, secure 
 | Use unique redemption links + QR codes | Works for both digital delivery and printouts | — Pending |
 | Support CSV bulk upload + API | Covers event/holiday use cases and automation | — Pending |
 | Sats-denominated only | Aligns with LNBits native unit; defers currency complexity | — Pending |
+| No per-card wallets (post-session) | Withdraw extension pattern: sats stay in issuer wallet, paid directly at redemption. Eliminates wallet proliferation. | Applied — services.py rewritten, 10 card wallets cleaned up |
+| Store raw_token in DB (post-session) | Enables redemption_url reconstruction for card list display. Security trade-off accepted. | Applied — migration m002, raw_token not exposed in public/list APIs |
+| Proxy headers required for uvicorn | Redemption URLs must use external domain, not 127.0.0.1 | Applied — `--proxy-headers --forwarded-allow-ips '*'` |
 
 ## Evolution
 

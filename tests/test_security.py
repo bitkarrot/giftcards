@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from giftcards.crud import create_card, db, get_cards_by_wallet
-from giftcards.migrations import m001_initial
+from giftcards.migrations import m001_initial, m002_add_raw_token
 from giftcards.models import GiftCard
 from giftcards.services import generate_token
 from giftcards.views_api import api_get_cards, api_get_public_card
@@ -14,11 +14,12 @@ from giftcards.views_api import api_get_cards, api_get_public_card
 async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
+    await m002_add_raw_token(db)
 
 
 async def _make_card(
     wallet_id: str = "wallet_test",
-    card_wallet_id: str = "wallet_card",
+    card_wallet_id: str = None,
     amount: int = 1000,
     status: str = "active",
     expires_at: datetime | None = None,
@@ -59,21 +60,28 @@ def _wallet_mock(wallet_id: str):
 
 @pytest.mark.anyio
 async def test_token_hash_not_in_list_response():
-    """GET /api/v1/cards response never contains token_hash or card_wallet_id."""
+    """GET /api/v1/cards response never contains token_hash, raw_token, or card_wallet_id."""
     await _make_card(wallet_id="wallet_a")
 
     cards = await api_get_cards(wallet=_wallet_mock("wallet_a"))
     response_text = " ".join(c.json() for c in cards)
 
     assert "token_hash" not in response_text
+    assert "raw_token" not in response_text
     assert "card_wallet_id" not in response_text
     assert "wallet" not in response_text
 
 
 @pytest.mark.anyio
-async def test_raw_token_not_stored_in_database():
-    """The database stores only the SHA-256 token hash; no raw token column exists."""
+async def test_raw_token_stored_but_not_public():
+    """The database stores raw_token for issuer link retrieval, but it is never exposed publicly."""
+    raw_token, token_hash = generate_token()
     card = await _make_card(wallet_id="wallet_a")
+    # Update the card with a raw_token to simulate creation flow
+    await db.execute(
+        "UPDATE giftcards.cards SET raw_token = :token, redemption_url = :url WHERE id = :id",
+        {"token": raw_token, "url": f"https://example.com/giftcards/redeem/{raw_token}", "id": card.id},
+    )
 
     rows = await db.fetchall(
         "PRAGMA table_info(cards)",
@@ -81,12 +89,19 @@ async def test_raw_token_not_stored_in_database():
     )
     columns = {r["name"] for r in rows}
 
-    assert "raw_token" not in columns, "raw token column must not exist"
+    assert "raw_token" in columns, "raw_token column must exist for link retrieval"
     assert "token_hash" in columns, "token hash column must exist"
+    assert "redemption_url" in columns, "redemption_url column must exist"
 
     # Verify the stored hash is a 64-character hex string (SHA-256).
     assert len(card.token_hash) == 64
     assert all(c in "0123456789abcdef" for c in card.token_hash)
+
+    # Public endpoint must NOT expose raw_token or redemption_url
+    public = await api_get_public_card(card.token_hash)
+    public_dict = public.dict()
+    assert "raw_token" not in public_dict
+    assert "redemption_url" not in public_dict
 
 
 @pytest.mark.anyio

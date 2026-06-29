@@ -55,7 +55,7 @@
                     dense
                     @click="props.expand = !props.expand"
                     :icon="props.expand ? 'expand_less' : 'expand_more'"
-                  />
+                  ></q-btn>
                 </q-td>
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                   <span v-if="col.name === 'amount'">{{ col.value }} sats</span>
@@ -63,7 +63,7 @@
                     <q-badge
                       :color="getStatusColor(col.value)"
                       :label="getStatusText(col.value)"
-                    />
+                    ></q-badge>
                   </span>
                   <span v-else-if="col.name === 'expires_at'">
                     {{ col.value || 'Never' }}
@@ -104,9 +104,9 @@
                         <div class="text-caption">Redemption Link:</div>
                         <q-input
                           readonly
-                          dense
-                          :value="props.row.redemption_url"
+                          :model-value="props.row.redemption_url"
                           outlined
+                          :input-style="{ color: $q.dark.isActive ? '#e0e0e0' : '#333' }"
                         >
                           <template v-slot:append>
                             <q-btn
@@ -115,7 +115,7 @@
                               icon="content_copy"
                               @click="copyToClipboard(props.row.redemption_url)"
                               aria-label="Copy link to clipboard"
-                            />
+                            ></q-btn>
                           </template>
                         </q-input>
                       </div>
@@ -128,7 +128,7 @@
         </q-card-section>
       </q-card>
     </div>
-    
+
     <div class="col-12 col-md-4 col-lg-5 q-gutter-y-md">
       <q-card>
         <q-card-section>
@@ -168,20 +168,16 @@
     <!-- Create Gift Card Dialog -->
     <q-dialog v-model="createDialog.show" position="top">
       <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
-        <q-form @submit="createGiftCard" class="q-gutter-md">
-          <div v-if="!createDialog.result">
-            <div class="row">
-              <div class="col">
-                <q-select
-                  filled
-                  dense
-                  emit-value
-                  v-model="createDialog.data.wallet"
-                  :options="g.user.walletOptions"
-                  label="Wallet"
-                />
-              </div>
-            </div>
+        <q-form @submit="createGiftCard">
+          <div v-if="!createDialog.result" class="q-gutter-md">
+            <q-select
+              filled
+              dense
+              emit-value
+              v-model="createDialog.data.wallet"
+              :options="g.user.walletOptions"
+              label="Wallet"
+            ></q-select>
 
             <q-input
               filled
@@ -194,7 +190,7 @@
                 val => val > 0 || 'Amount must be greater than 0',
                 val => val <= walletBalance || 'Amount exceeds your wallet balance'
               ]"
-            />
+            ></q-input>
 
             <q-input
               filled
@@ -203,7 +199,7 @@
               type="text"
               label="Recipient Name"
               hint="Optional — shown on the redemption page."
-            />
+            ></q-input>
 
             <q-input
               filled
@@ -212,7 +208,7 @@
               type="text"
               label="Your Name"
               hint="Optional — shown as sender on the redemption page."
-            />
+            ></q-input>
 
             <q-input
               filled
@@ -221,7 +217,7 @@
               type="textarea"
               label="Personal Message"
               hint="Optional — shown to recipient."
-            />
+            ></q-input>
 
             <q-input
               filled
@@ -233,7 +229,7 @@
               :rules="[
                 val => !val || new Date(val) > new Date() || 'Expiration date must be in the future'
               ]"
-            />
+            ></q-input>
 
             <div class="row q-mt-lg">
               <q-btn
@@ -242,26 +238,26 @@
                 type="submit"
                 label="Create Gift Card"
                 :loading="createDialog.loading"
-              />
+              ></q-btn>
               <q-btn
                 v-close-popup
                 flat
                 color="grey"
                 class="q-ml-auto"
                 label="Discard Gift Card"
-              />
+              ></q-btn>
             </div>
           </div>
 
           <!-- Success Result -->
-          <div v-else>
+          <div v-else class="q-gutter-md">
             <div class="text-center q-mb-lg">
               <h5 class="text-h6 q-my-none text-positive">Gift Card Created</h5>
             </div>
 
-            <q-banner class="q-mb-md bg-warning text-white">
+            <q-banner class="q-mb-md bg-warning text-white rounded-borders">
               <template v-slot:avatar>
-                <q-icon name="warning" />
+                <q-icon name="warning"></q-icon>
               </template>
               Save this link — it cannot be recovered.
             </q-banner>
@@ -269,9 +265,10 @@
             <q-input
               readonly
               dense
-              :value="createDialog.result.redemption_url"
+              :model-value="createDialog.result.redemption_url"
               outlined
               class="q-mb-md"
+              :input-style="{ color: $q.dark.isActive ? '#e0e0e0' : '#333' }"
             >
               <template v-slot:append>
                 <q-btn
@@ -280,7 +277,7 @@
                   icon="content_copy"
                   @click="copyToClipboard(createDialog.result.redemption_url)"
                   aria-label="Copy link to clipboard"
-                />
+                ></q-btn>
               </template>
             </q-input>
 
@@ -290,14 +287,14 @@
                 color="primary"
                 @click="resetCreateDialog"
                 label="Create Another"
-              />
+              ></q-btn>
               <q-btn
                 v-close-popup
                 flat
                 color="grey"
                 class="q-ml-auto"
                 label="Close Dialog"
-              />
+              ></q-btn>
             </div>
           </div>
         </q-form>

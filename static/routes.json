@@ -1,0 +1,14 @@
+[
+  {
+    "path": "/giftcards/",
+    "name": "PageGiftCards",
+    "template": "/giftcards/static/js/index.vue",
+    "component": "/giftcards/static/js/index.js"
+  },
+  {
+    "path": "/giftcards/redeem/:raw_token",
+    "name": "PageGiftCardsRedeem",
+    "template": "/giftcards/static/js/redeem.vue",
+    "component": "/giftcards/static/js/redeem.js"
+  }
+]

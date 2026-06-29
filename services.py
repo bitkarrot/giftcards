@@ -1,11 +1,10 @@
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from lnbits.core.crud.wallets import create_wallet, get_wallet
+from lnbits.core.crud.wallets import get_wallet
 from lnbits.core.models.payments import Payment, PaymentState
-from lnbits.core.models.wallets import WalletType
 from lnbits.core.services.payments import update_wallet_balance, pay_invoice
 from lnbits.exceptions import PaymentError
 from loguru import logger
@@ -21,58 +20,44 @@ def generate_token() -> tuple[str, str]:
     return raw_token, token_hash
 
 
-async def create_card_wallet(user_id: str, card_id: str) -> Optional[str]:
-    """
-    Create a dedicated wallet under the issuer user to hold locked sats.
-    Returns wallet ID or None if creation fails.
-    """
-    try:
-        wallet = await create_wallet(
-            user_id=user_id,
-            wallet_name=f"GiftCard {card_id[:8]}",
-            wallet_type=WalletType.LIGHTNING,
-        )
-        return wallet.id
-    except Exception as e:
-        logger.warning(f"Could not create card wallet for {card_id}: {e}")
-        return None
-
-
 async def create_gift_card(
     data: CreateGiftCard, issuer_wallet_id: str, user_id: str, base_url: str
 ) -> CreateGiftCardResponse:
     """
-    Create a funded gift card by debiting the issuer wallet.
+    Create a gift card.
+
+    Sats are NOT moved to a separate wallet — they stay in the issuer wallet
+    and are paid directly to the recipient at redemption time, following the
+    same pattern as the LNbits withdraw extension.
     """
     # Generate secure token
     raw_token, token_hash = generate_token()
-    
-    # Create card record first
+
+    # Create card record
     card_id = f"gc_{token_hash[:16]}"
-    
-    # Try to create dedicated card wallet (D-03)
-    card_wallet_id = await create_card_wallet(user_id, card_id)
-    
+
     card = GiftCard(
         id=card_id,
         wallet=issuer_wallet_id,
-        card_wallet_id=card_wallet_id,
+        card_wallet_id=None,
         amount=data.amount,
         token_hash=token_hash,
+        raw_token=raw_token,
+        redemption_url=f"{base_url.rstrip('/')}/giftcards/redeem/{raw_token}",
         status="active",
         recipient_name=data.recipient_name,
         sender_name=data.sender_name,
         message=data.message,
         expires_at=data.expires_at,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         redeemed_at=None,
         expired_at=None,
     )
-    
+
     # Save card to database
     await create_card(card)
-    
-    # Debit issuer wallet (D-03)
+
+    # Debit issuer wallet immediately (lock the sats)
     issuer_wallet = await get_wallet(issuer_wallet_id)
     if issuer_wallet:
         await update_wallet_balance(
@@ -80,15 +65,6 @@ async def create_gift_card(
             amount=-data.amount,
         )
 
-    # Credit card wallet if created (D-03)
-    if card_wallet_id:
-        card_wallet = await get_wallet(card_wallet_id)
-        if card_wallet:
-            await update_wallet_balance(
-                wallet=card_wallet,
-                amount=data.amount,
-            )
-    
     # Build response
     card_summary = GiftCardSummary(
         id=card.id,
@@ -102,10 +78,10 @@ async def create_gift_card(
         redeemed_at=card.redeemed_at,
         expired_at=card.expired_at,
     )
-    
+
     redemption_url = f"{base_url.rstrip('/')}/giftcards/redeem/{raw_token}"
     lnurl_url = f"{base_url.rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
-    
+
     return CreateGiftCardResponse(
         card=card_summary,
         raw_token=raw_token,
@@ -120,21 +96,15 @@ class PaymentPendingError(Exception):
 
 async def pay_and_complete(card: GiftCard, bolt11: str) -> Payment:
     """
-    Pay the recipient's invoice and return the resulting Payment.
+    Pay the recipient's invoice directly from the issuer wallet.
 
     Raises PaymentError, PaymentPendingError, or any unexpected exception
     so the caller can reset the card to active and return a safe LNURL error.
     """
-    # Use card wallet if available, otherwise use issuer wallet (D-04 fallback)
-    wallet_id = card.card_wallet_id or card.wallet
-    wallet = await get_wallet(wallet_id)
-
-    if not wallet:
-        raise Exception(f"Wallet {wallet_id} not found")
-
     payment = await pay_invoice(
-        wallet_id=wallet_id,
+        wallet_id=card.wallet,
         payment_request=bolt11,
+        max_sat=card.amount,
         memo=f"Redeem gift card {card.id[:8]}",
     )
 
@@ -147,31 +117,17 @@ async def pay_and_complete(card: GiftCard, bolt11: str) -> Payment:
 
 
 async def reclaim_card_sats(card: GiftCard) -> None:
-    """Return locked sats from the card wallet to the issuer wallet.
+    """Return locked sats to the issuer wallet when a card expires.
 
-    If no dedicated card wallet was created (D-04 fallback), the issuer wallet
-    is credited directly because the issuer wallet was never actually moved.
+    Since sats were debited from the issuer wallet at creation time and no
+    dedicated card wallet is used, we simply credit the issuer wallet back.
     """
     issuer_wallet = await get_wallet(card.wallet)
     if not issuer_wallet:
         logger.error(f"Cannot reclaim sats for expired card {card.id}: issuer wallet not found")
         return
 
-    if card.card_wallet_id:
-        card_wallet = await get_wallet(card.card_wallet_id)
-        if not card_wallet:
-            logger.error(f"Cannot reclaim sats for expired card {card.id}: card wallet not found")
-            return
-
-        try:
-            await update_wallet_balance(wallet=card_wallet, amount=-card.amount)
-            await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
-        except Exception as exc:
-            logger.error(f"Reclaim failed for expired card {card.id}: {exc}")
-    else:
-        # D-04 fallback: no dedicated wallet was ever funded separately,
-        # so the issuer wallet is credited directly.
-        try:
-            await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
-        except Exception as exc:
-            logger.error(f"Reclaim failed for expired card {card.id}: {exc}")
+    try:
+        await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
+    except Exception as exc:
+        logger.error(f"Reclaim failed for expired card {card.id}: {exc}")

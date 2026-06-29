@@ -234,5 +234,21 @@ None - no external service configuration required.
 
 ---
 
+## Post-Session Update (2026-06-29, outside GSD workflow)
+
+After this plan was executed and committed, the following changes were made during manual testing:
+
+1. **Architecture refactor:** `create_card_wallet` removed from `services.py`. Sats now stay in the issuer wallet and are paid directly to the recipient at redemption (withdraw extension pattern). `reclaim_card_sats` simplified to just credit the issuer wallet back. The D-04 fallback is now the only code path.
+2. **Migration m002:** Added `raw_token` and `redemption_url` columns to the cards table.
+3. **LNURL fixes:** Route name for `url_for`, `CallbackUrl` scheme kwarg, timezone-aware datetime comparison.
+4. **Frontend fixes:** Quasar `:model-value` binding, dialog formatting, redemption URL display.
+5. **Tests:** All fixtures updated to use `card_wallet_id=None`; reclaim test simplified. 30/30 tests still pass.
+6. **DB cleanup:** 10 card wallets deleted, sats reclaimed, 20 bad apipayments rows removed.
+
+The `reclaim_card_sats` description in the coverage section (D2) above is now simplified — there is no longer a "dedicated card wallet" path. The issuer wallet is always credited directly.
+
+---
+
 *Phase: 01-core-loop*  
-*Completed: 2026-06-29*
+*Completed: 2026-06-29*  
+*Post-session hardening: 2026-06-29*

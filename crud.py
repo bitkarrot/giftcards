@@ -31,7 +31,7 @@ async def get_card_by_token_hash(token_hash: str) -> Optional[GiftCard]:
 
 async def get_cards_by_wallet(wallet_id: str) -> list[GiftCardSummary]:
     return await db.fetchall(
-        "SELECT id, amount, status, recipient_name, sender_name, message, expires_at, created_at, redeemed_at, expired_at FROM giftcards.cards WHERE wallet = :wallet",
+        "SELECT id, amount, status, recipient_name, sender_name, message, expires_at, created_at, redeemed_at, expired_at, redemption_url FROM giftcards.cards WHERE wallet = :wallet",
         {"wallet": wallet_id},
         GiftCardSummary,
     )
