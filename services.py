@@ -79,19 +79,23 @@ async def create_gift_card(
     await create_card(card)
     
     # Debit issuer wallet (D-03)
-    await update_wallet_balance(
-        wallet_id=issuer_wallet_id,
-        amount=-data.amount,
-        memo=f"Gift card {card_id[:8]} created",
-    )
+    issuer_wallet = await get_wallet(issuer_wallet_id)
+    if issuer_wallet:
+        await update_wallet_balance(
+            wallet=issuer_wallet,
+            amount=-data.amount * 1000,  # Convert to millisats
+            memo=f"Gift card {card_id[:8]} created",
+        )
     
     # Credit card wallet if created (D-03)
     if card_wallet_id:
-        await update_wallet_balance(
-            wallet_id=card_wallet_id,
-            amount=data.amount,
-            memo=f"Funding for gift card {card_id[:8]}",
-        )
+        card_wallet = await get_wallet(card_wallet_id)
+        if card_wallet:
+            await update_wallet_balance(
+                wallet=card_wallet,
+                amount=data.amount * 1000,  # Convert to millisats
+                memo=f"Funding for gift card {card_id[:8]}",
+            )
     
     # Build response
     card_summary = GiftCardSummary(
@@ -126,6 +130,10 @@ async def pay_and_complete(card: GiftCard, bolt11: str) -> bool:
     try:
         # Use card wallet if available, otherwise use issuer wallet (D-04 fallback)
         wallet_id = card.card_wallet_id or card.wallet
+        wallet = await get_wallet(wallet_id)
+        
+        if not wallet:
+            raise Exception(f"Wallet {wallet_id} not found")
         
         # Pay the invoice
         await pay_invoice(
@@ -158,17 +166,22 @@ async def expire_gift_cards() -> None:
             
             # Reclaim sats to issuer wallet
             if card.card_wallet_id:
-                # Transfer from card wallet back to issuer
-                await update_wallet_balance(
-                    wallet_id=card.card_wallet_id,
-                    amount=-card.amount,
-                    memo=f"Expire gift card {card.id[:8]}",
-                )
-                await update_wallet_balance(
-                    wallet_id=card.wallet,
-                    amount=card.amount,
-                    memo=f"Reclaim expired gift card {card.id[:8]}",
-                )
+                # Get wallets
+                card_wallet = await get_wallet(card.card_wallet_id)
+                issuer_wallet = await get_wallet(card.wallet)
+                
+                if card_wallet and issuer_wallet:
+                    # Transfer from card wallet back to issuer
+                    await update_wallet_balance(
+                        wallet=card_wallet,
+                        amount=-card.amount * 1000,  # Convert to millisats
+                        memo=f"Expire gift card {card.id[:8]}",
+                    )
+                    await update_wallet_balance(
+                        wallet=issuer_wallet,
+                        amount=card.amount * 1000,  # Convert to millisats
+                        memo=f"Reclaim expired gift card {card.id[:8]}",
+                    )
             else:
                 # If no dedicated wallet, sats are already with issuer
                 logger.info(f"Gift card {card.id[:8]} expired (no dedicated wallet)")

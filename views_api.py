@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from io import BytesIO
 from lnbits.core.models import WalletTypeInfo
 from lnbits.decorators import require_admin_key
 from lnurl import (
@@ -10,6 +11,8 @@ from lnurl import (
     MilliSatoshi,
 )
 from loguru import logger
+import pyqrcode  # type: ignore[import-untyped]
+from PIL import Image, ImageDraw
 
 from .crud import get_card_by_token_hash, mark_redeeming, get_cards_by_wallet
 from .models import CreateGiftCard, GiftCardSummary, PublicGiftCard
@@ -17,6 +20,35 @@ from .services import create_gift_card, pay_and_complete
 
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
 giftcards_lnurl_router = APIRouter(prefix="/api/v1/lnurl")
+
+
+def make_qr_png(data: str, size: int = 235, border: int = 4) -> Image.Image:
+    """Generate a QR code as PNG image."""
+    qr = pyqrcode.create(data)
+    matrix = qr.code
+    modules = len(matrix)
+
+    total_modules = modules + border * 2
+    box_size = max(1, size // total_modules)
+    img_size = total_modules * box_size
+
+    img = Image.new("RGBA", (img_size, img_size), "white")
+    draw = ImageDraw.Draw(img)
+
+    for y, row in enumerate(matrix):
+        for x, cell in enumerate(row):
+            if cell:
+                x0 = (x + border) * box_size
+                y0 = (y + border) * box_size
+                draw.rectangle(
+                    [x0, y0, x0 + box_size - 1, y0 + box_size - 1],
+                    fill="black",
+                )
+
+    if img_size != size:
+        img = img.resize((size, size), Image.Resampling.NEAREST)
+
+    return img
 
 
 @giftcards_api_router.post("")
@@ -140,3 +172,35 @@ async def lnurl_callback(
                 reason="Payment failed. Please try again."
             ).dict(),
         )
+
+
+@giftcards_lnurl_router.get("/{token_hash}/qr")
+async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
+    """Generate QR code for LNURL-withdraw endpoint."""
+    card = await get_card_by_token_hash(token_hash)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+    
+    # Check if card is active and not expired
+    now = card.created_at.utcnow().replace(tzinfo=card.created_at.tzinfo)
+    if card.status != "active" or (card.expires_at and now > card.expires_at):
+        raise HTTPException(status_code=410, detail="Gift card is not redeemable")
+    
+    # Build LNURL URL
+    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
+    
+    # Generate QR code
+    qr_img = make_qr_png(lnurl_url, size=300)
+    output = BytesIO()
+    qr_img.save(output, format="PNG")
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
