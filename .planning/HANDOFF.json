@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-29T19:48:23.539Z",
+  "phase": "01",
+  "phase_name": "core-loop",
+  "phase_dir": ".planning/phases/01-core-loop",
+  "plan": 3,
+  "task": 3,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Wave 1: Walking skeleton (01-01-PLAN)", "status": "done", "commit": "0504065"},
+    {"id": 2, "name": "Wave 2: Harden redemption (01-02-PLAN)", "status": "done", "commit": "a3d31b6"},
+    {"id": 3, "name": "Wave 3: Expiry sweep and security (01-03-PLAN)", "status": "done", "commit": "375bf52"}
+  ],
+  "remaining_tasks": [],
+  "blockers": [
+    {
+      "description": "Phase 1 verifier flagged 3 items requiring manual human testing before the core loop can be considered fully validated in production: create-card wallet debit, redemption UI rendering, and QR scan to real Lightning wallet.",
+      "type": "human_action",
+      "workaround": "Automated tests (30/30) pass; manual checks can be deferred until before Phase 2 execution."
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {
+      "action": "Manually create a gift card and confirm issuer wallet is debited by the card amount.",
+      "context": "Verifier cannot assert real wallet balance change via automated tests.",
+      "blocking": false
+    },
+    {
+      "action": "Open a redemption link in a browser/incognito window and confirm amount, sender name, message, and QR render correctly.",
+      "context": "Visual UI verification requires a browser.",
+      "blocking": false
+    },
+    {
+      "action": "Scan the LNURL QR code with a real Lightning wallet and complete redemption.",
+      "context": "Full QR → wallet scan → LNURL callback → payout chain requires a real wallet and camera.",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {"decision": "Phase 1 Core Loop is code-complete and verified by automated tests.", "rationale": "All 30 tests pass; all 15 locked decisions implemented; all 10 requirements addressed.", "phase": "01"},
+    {"decision": "Pause work before Phase 2 discussion per user request.", "rationale": "User wants to resume in ~24 hours and proceed to Phase 2 Branded Delivery.", "phase": "02"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Start Phase 2 discussion: run /gsd-discuss-phase 2 (or auto-advance) to begin Branded Delivery (templates, email, nostr, printable PNG).",
+  "context_notes": "Phase 1 is fully complete. The verifier marked the phase human_needed because three manual checks remain, but the user chose to defer them and resume in 24 hours. The next session should begin with Phase 2 planning; no Phase 1 work remains."
+}
