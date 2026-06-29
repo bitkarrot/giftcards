@@ -13,7 +13,7 @@ from giftcards.crud import (
     get_card_by_token_hash,
     mark_redeemed,
     mark_redeeming,
-    reset_to_active,
+    reset_card_to_active,
 )
 from giftcards.migrations import m001_initial
 from giftcards.models import GiftCard
@@ -222,9 +222,9 @@ async def test_mark_redeemed_sets_redeemed_at():
 
 
 @pytest.mark.anyio
-async def test_reset_to_active_recover_redeeming_card():
-    """reset_to_active moves a stuck card back to active."""
+async def test_reset_card_to_active_recover_redeeming_card():
+    """reset_card_to_active moves a stuck card back to active."""
     card = await _make_card("redeeming")
-    await reset_to_active(card.id)
+    await reset_card_to_active(card.id)
     updated = await get_card_by_token_hash(card.token_hash)
     assert updated.status == "active"

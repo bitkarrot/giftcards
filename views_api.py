@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
 from lnbits.core.models import WalletTypeInfo
@@ -14,7 +14,13 @@ from loguru import logger
 import pyqrcode  # type: ignore[import-untyped]
 from PIL import Image, ImageDraw
 
-from .crud import get_card_by_token_hash, mark_redeeming, get_cards_by_wallet
+from .crud import (
+    get_card_by_token_hash,
+    mark_redeemed,
+    mark_redeeming,
+    reset_card_to_active,
+    get_cards_by_wallet,
+)
 from .models import CreateGiftCard, GiftCardSummary, PublicGiftCard
 from .services import create_gift_card, pay_and_complete
 
@@ -140,36 +146,51 @@ async def lnurl_params(token_hash: str, request: Request) -> LnurlWithdrawRespon
 
 @giftcards_lnurl_router.get("/callback")
 async def lnurl_callback(
-    pr: str = Query(..., description="Payment request (BOLT11 invoice)"),
-    k1: str = Query(..., description="Token hash"),
+    pr: str | None = None,
+    k1: str | None = None,
 ) -> JSONResponse:
-    """LNURL-withdraw callback endpoint."""
-    # Atomically mark card as redeeming
-    card = await mark_redeeming(k1)
-    if not card:
-        # Card already redeemed or not active
+    """LNURL-withdraw callback endpoint.
+
+    Validates the request, atomically claims the card, pays the invoice,
+    and resets the card to active on any failure so the recipient can retry.
+    """
+    if not pr:
         return JSONResponse(
             status_code=400,
             content=LnurlErrorResponse(
-                reason="Gift card already redeemed or not found"
+                reason="Payment request is required"
             ).dict(),
         )
-    
-    # Try to pay the invoice
-    success = await pay_and_complete(card, pr)
-    
-    if success:
-        return JSONResponse(
-            content=LnurlSuccessResponse(
-                status="OK",
-                reason="Gift card redeemed successfully",
-            ).dict()
-        )
-    else:
+    if not k1:
         return JSONResponse(
             status_code=400,
             content=LnurlErrorResponse(
-                reason="Payment failed. Please try again."
+                reason="Redemption token is required"
+            ).dict(),
+        )
+
+    # Atomically mark card as redeeming; only one concurrent request wins
+    card = await mark_redeeming(k1)
+    if not card:
+        return JSONResponse(
+            status_code=400,
+            content=LnurlErrorResponse(
+                reason="Gift card is not available for redemption"
+            ).dict(),
+        )
+
+    try:
+        await pay_and_complete(card, pr)
+        await mark_redeemed(card.id)
+        return JSONResponse(content=LnurlSuccessResponse().dict())
+    except Exception:
+        # Log without exposing the raw token or internal details
+        logger.exception(f"Redemption failed for gift card {card.id[:8]}")
+        await reset_card_to_active(card.id)
+        return JSONResponse(
+            status_code=400,
+            content=LnurlErrorResponse(
+                reason="Redemption failed. Please try again."
             ).dict(),
         )
 

@@ -5,15 +5,15 @@ from typing import Optional
 
 from fastapi import Request
 from lnbits.core.crud.wallets import create_wallet, get_wallet
+from lnbits.core.models.payments import Payment, PaymentState
 from lnbits.core.models.wallets import WalletType
 from lnbits.core.services.payments import update_wallet_balance, pay_invoice
+from lnbits.exceptions import PaymentError
 from loguru import logger
 
 from .crud import (
     create_card,
     get_card_by_token_hash,
-    mark_redeemed,
-    reset_to_active,
     mark_expired,
     get_expired_active_cards,
 )
@@ -122,35 +122,36 @@ async def create_gift_card(
     )
 
 
-async def pay_and_complete(card: GiftCard, bolt11: str) -> bool:
+class PaymentPendingError(Exception):
+    """Raised when a Lightning payment does not reach a success state."""
+
+
+async def pay_and_complete(card: GiftCard, bolt11: str) -> Payment:
     """
-    Pay the recipient's invoice and mark the card as redeemed.
-    Returns True on success, False on payment failure.
+    Pay the recipient's invoice and return the resulting Payment.
+
+    Raises PaymentError, PaymentPendingError, or any unexpected exception
+    so the caller can reset the card to active and return a safe LNURL error.
     """
-    try:
-        # Use card wallet if available, otherwise use issuer wallet (D-04 fallback)
-        wallet_id = card.card_wallet_id or card.wallet
-        wallet = await get_wallet(wallet_id)
-        
-        if not wallet:
-            raise Exception(f"Wallet {wallet_id} not found")
-        
-        # Pay the invoice
-        await pay_invoice(
-            wallet_id=wallet_id,
-            payment_request=bolt11,
-            memo=f"Redeem gift card {card.id[:8]}",
+    # Use card wallet if available, otherwise use issuer wallet (D-04 fallback)
+    wallet_id = card.card_wallet_id or card.wallet
+    wallet = await get_wallet(wallet_id)
+
+    if not wallet:
+        raise Exception(f"Wallet {wallet_id} not found")
+
+    payment = await pay_invoice(
+        wallet_id=wallet_id,
+        payment_request=bolt11,
+        memo=f"Redeem gift card {card.id[:8]}",
+    )
+
+    if payment.status != PaymentState.SUCCESS.value:
+        raise PaymentPendingError(
+            f"Payment ended in {payment.status} state"
         )
-        
-        # Mark as redeemed
-        await mark_redeemed(card.id)
-        return True
-        
-    except Exception as e:
-        logger.error(f"Payment failed for gift card {card.id[:8]}: {e}")
-        # Reset to active so recipient can try again (D-15)
-        await reset_to_active(card.id)
-        return False
+
+    return payment
 
 
 async def expire_gift_cards() -> None:

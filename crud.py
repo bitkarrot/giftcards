@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -54,23 +55,24 @@ async def mark_redeeming(token_hash: str) -> Optional[GiftCard]:
     return await get_card_by_token_hash(token_hash)
 
 
+
 async def mark_redeemed(card_id: str) -> None:
     await db.execute(
-        """
-        UPDATE giftcards.cards 
-        SET status = 'redeemed', redeemed_at = :redeemed_at 
+        f"""
+        UPDATE giftcards.cards
+        SET status = 'redeemed', redeemed_at = {db.timestamp_placeholder('now')}
         WHERE id = :id
         """,
-        {"id": card_id, "redeemed_at": datetime.now()},
+        {"id": card_id, "now": time.time()},
     )
 
 
-async def reset_to_active(card_id: str) -> None:
+async def reset_card_to_active(card_id: str) -> None:
     """Reset a card back to active status (used when payment fails)."""
     await db.execute(
         """
-        UPDATE giftcards.cards 
-        SET status = 'active' 
+        UPDATE giftcards.cards
+        SET status = 'active'
         WHERE id = :id
         """,
         {"id": card_id},
