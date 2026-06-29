@@ -1048,22 +1048,19 @@ async def m001_initial(db):
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **D-03 vs D-04 as primary path for Phase 1**
    - What we know: `create_wallet` is importable and works. `update_wallet_balance` handles debit/credit internally. The dedicated wallet model (D-03) gives clean sats isolation and simplifies the `pay_invoice` call at redemption. The fallback (D-04) uses the issuer wallet directly.
-   - What's unclear: D-04 says "create one internal invoice from the issuer wallet and record it as a locked balance claim" — this is more complex than using `update_wallet_balance` directly. The CONTEXT.md says D-04 is "sufficient for Phase 1."
-   - **Recommendation:** Implement D-03 (dedicated wallet) as the primary path — it's simple (`create_wallet` is one call) and produces cleaner sats accounting. D-04 is the fallback when `create_wallet` raises an exception. Do NOT implement the "internal invoice" variant of D-04 — just use D-03 with a try/except that falls back to `card_wallet_id = None` and pays from `card.wallet` (issuer wallet) at redemption.
+   - **RESOLVED:** Implement D-03 (dedicated wallet) as the primary path — it's simple (`create_wallet` is one call) and produces cleaner sats accounting. D-04 is the fallback when `create_wallet` raises an exception. Do NOT implement the "internal invoice" variant of D-04 — just use D-03 with a try/except that falls back to `card_wallet_id = None` and pays from `card.wallet` (issuer wallet) at redemption.
 
 2. **`pay_invoice` timeout and `redeeming` state recovery**
    - What we know: `pay_invoice` returns a pending `Payment` (not raises) on timeout. The card will remain in `redeeming` state if this happens.
-   - What's unclear: D-15 says "card must not be left in a stuck redeeming state without a retry path." The LNURL callback will have returned `LnurlSuccessResponse()` (wrong) or the timeout occurs before the `pay_invoice` call... Actually, TPoS returns `LnurlErrorResponse` on `except Exception`. If `pay_invoice` times out (no exception raised), the card is stuck `redeeming` and `LnurlSuccessResponse` is returned (wrong).
-   - **Recommendation:** After `pay_invoice`, check the returned `Payment.status`. If `status == PaymentState.PENDING`, treat it as an error: reset card to `active`, return `LnurlErrorResponse`. The wallet has not been debited (payment is pending/not settled). This is Phase 1 acceptable.
+   - **RESOLVED:** After `pay_invoice`, check the returned `Payment.status`. If `status == PaymentState.PENDING`, treat it as an error: reset card to `active`, return `LnurlErrorResponse`. The wallet has not been debited (payment is pending/not settled). This is Phase 1 acceptable.
 
 3. **Base URL for generating redemption/LNURL URLs**
    - What we know: The creation endpoint handler has `request: Request` available. `str(request.base_url).rstrip("/")` gives the base URL.
-   - What's unclear: For URLs baked into QR codes / returned in the response, they must be the public HTTPS base URL, not `localhost`. LNBits settings have `settings.lnbits_baseurl` or similar.
-   - **Recommendation:** Use `str(request.base_url).rstrip("/")` in the API handler (matches TPoS/events pattern). Pass it into `create_gift_card()` as `base_url` parameter.
+   - **RESOLVED:** Use `str(request.base_url).rstrip("/")` in the API handler (matches TPoS/events pattern). Pass it into `create_gift_card()` as `base_url` parameter.
 
 ---
 
