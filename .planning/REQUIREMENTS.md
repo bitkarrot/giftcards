@@ -78,39 +78,39 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GCARD-01 | TBD | Pending |
-| GCARD-02 | TBD | Pending |
-| GCARD-03 | TBD | Pending |
-| GCARD-04 | TBD | Pending |
-| GCARD-05 | TBD | Pending |
-| REDM-01 | TBD | Pending |
-| REDM-02 | TBD | Pending |
-| REDM-03 | TBD | Pending |
-| REDM-04 | TBD | Pending |
-| REDM-05 | TBD | Pending |
-| DELV-01 | TBD | Pending |
-| DELV-02 | TBD | Pending |
-| DELV-03 | TBD | Pending |
-| DELV-04 | TBD | Pending |
-| TPLT-01 | TBD | Pending |
-| TPLT-02 | TBD | Pending |
-| TPLT-03 | TBD | Pending |
-| BULK-01 | TBD | Pending |
-| BULK-02 | TBD | Pending |
-| BULK-03 | TBD | Pending |
-| BULK-04 | TBD | Pending |
-| API-01 | TBD | Pending |
-| API-02 | TBD | Pending |
-| API-03 | TBD | Pending |
-| DASH-01 | TBD | Pending |
-| DASH-02 | TBD | Pending |
-| DASH-03 | TBD | Pending |
+| GCARD-01 | Phase 1 | Pending |
+| GCARD-02 | Phase 1 | Pending |
+| GCARD-03 | Phase 1 | Pending |
+| GCARD-04 | Phase 1 | Pending |
+| GCARD-05 | Phase 1 | Pending |
+| REDM-01 | Phase 1 | Pending |
+| REDM-02 | Phase 1 | Pending |
+| REDM-03 | Phase 1 | Pending |
+| REDM-04 | Phase 1 | Pending |
+| REDM-05 | Phase 1 | Pending |
+| DELV-01 | Phase 2 | Pending |
+| DELV-02 | Phase 2 | Pending |
+| DELV-03 | Phase 2 | Pending |
+| DELV-04 | Phase 2 | Pending |
+| TPLT-01 | Phase 2 | Pending |
+| TPLT-02 | Phase 2 | Pending |
+| TPLT-03 | Phase 2 | Pending |
+| BULK-01 | Phase 3 | Pending |
+| BULK-02 | Phase 3 | Pending |
+| BULK-03 | Phase 3 | Pending |
+| BULK-04 | Phase 3 | Pending |
+| API-01 | Phase 3 | Pending |
+| API-02 | Phase 3 | Pending |
+| API-03 | Phase 3 | Pending |
+| DASH-01 | Phase 3 | Pending |
+| DASH-02 | Phase 3 | Pending |
+| DASH-03 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 (will be updated during roadmap creation)
+- Mapped to phases: 27
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after initial definition*
+*Last updated: 2026-06-29 after roadmap creation (Phase 1: 10 reqs, Phase 2: 7 reqs, Phase 3: 10 reqs)*
