@@ -1,5 +1,4 @@
 import time
-from datetime import datetime
 from typing import Optional
 
 from lnbits.db import Database
@@ -79,26 +78,28 @@ async def reset_card_to_active(card_id: str) -> None:
     )
 
 
-async def mark_expired(card_id: str) -> None:
-    await db.execute(
-        """
-        UPDATE giftcards.cards 
-        SET status = 'expired', expired_at = :expired_at 
-        WHERE id = :id
+async def mark_card_expired(card_id: str) -> bool:
+    """Atomically mark a single active card as expired. Returns True if changed."""
+    result = await db.execute(
+        f"""
+        UPDATE giftcards.cards
+        SET status = 'expired', expired_at = {db.timestamp_placeholder('now')}
+        WHERE id = :id AND status = 'active'
         """,
-        {"id": card_id, "expired_at": datetime.now()},
+        {"id": card_id, "now": time.time()},
     )
+    return result.rowcount == 1
 
 
 async def get_expired_active_cards() -> list[GiftCard]:
     """Get all active cards that have passed their expiration date."""
     return await db.fetchall(
         f"""
-        SELECT * FROM giftcards.cards 
-        WHERE status = 'active' 
-        AND expires_at IS NOT NULL 
-        AND expires_at < {db.timestamp_placeholder("now")}
+        SELECT * FROM giftcards.cards
+        WHERE status = 'active'
+        AND expires_at IS NOT NULL
+        AND expires_at < {db.timestamp_placeholder('now')}
         """,
-        {"now": datetime.now()},
+        {"now": time.time()},
         GiftCard,
     )

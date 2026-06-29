@@ -3,7 +3,6 @@ import secrets
 from datetime import datetime
 from typing import Optional
 
-from fastapi import Request
 from lnbits.core.crud.wallets import create_wallet, get_wallet
 from lnbits.core.models.payments import Payment, PaymentState
 from lnbits.core.models.wallets import WalletType
@@ -11,12 +10,7 @@ from lnbits.core.services.payments import update_wallet_balance, pay_invoice
 from lnbits.exceptions import PaymentError
 from loguru import logger
 
-from .crud import (
-    create_card,
-    get_card_by_token_hash,
-    mark_expired,
-    get_expired_active_cards,
-)
+from .crud import create_card, get_card_by_token_hash
 from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary
 
 
@@ -83,18 +77,16 @@ async def create_gift_card(
     if issuer_wallet:
         await update_wallet_balance(
             wallet=issuer_wallet,
-            amount=-data.amount * 1000,  # Convert to millisats
-            memo=f"Gift card {card_id[:8]} created",
+            amount=-data.amount,
         )
-    
+
     # Credit card wallet if created (D-03)
     if card_wallet_id:
         card_wallet = await get_wallet(card_wallet_id)
         if card_wallet:
             await update_wallet_balance(
                 wallet=card_wallet,
-                amount=data.amount * 1000,  # Convert to millisats
-                memo=f"Funding for gift card {card_id[:8]}",
+                amount=data.amount,
             )
     
     # Build response
@@ -154,38 +146,32 @@ async def pay_and_complete(card: GiftCard, bolt11: str) -> Payment:
     return payment
 
 
-async def expire_gift_cards() -> None:
+async def reclaim_card_sats(card: GiftCard) -> None:
+    """Return locked sats from the card wallet to the issuer wallet.
+
+    If no dedicated card wallet was created (D-04 fallback), the issuer wallet
+    is credited directly because the issuer wallet was never actually moved.
     """
-    Background task to expire cards and reclaim sats to issuer.
-    """
-    expired_cards = await get_expired_active_cards()
-    
-    for card in expired_cards:
+    issuer_wallet = await get_wallet(card.wallet)
+    if not issuer_wallet:
+        logger.error(f"Cannot reclaim sats for expired card {card.id}: issuer wallet not found")
+        return
+
+    if card.card_wallet_id:
+        card_wallet = await get_wallet(card.card_wallet_id)
+        if not card_wallet:
+            logger.error(f"Cannot reclaim sats for expired card {card.id}: card wallet not found")
+            return
+
         try:
-            # Mark as expired
-            await mark_expired(card.id)
-            
-            # Reclaim sats to issuer wallet
-            if card.card_wallet_id:
-                # Get wallets
-                card_wallet = await get_wallet(card.card_wallet_id)
-                issuer_wallet = await get_wallet(card.wallet)
-                
-                if card_wallet and issuer_wallet:
-                    # Transfer from card wallet back to issuer
-                    await update_wallet_balance(
-                        wallet=card_wallet,
-                        amount=-card.amount * 1000,  # Convert to millisats
-                        memo=f"Expire gift card {card.id[:8]}",
-                    )
-                    await update_wallet_balance(
-                        wallet=issuer_wallet,
-                        amount=card.amount * 1000,  # Convert to millisats
-                        memo=f"Reclaim expired gift card {card.id[:8]}",
-                    )
-            else:
-                # If no dedicated wallet, sats are already with issuer
-                logger.info(f"Gift card {card.id[:8]} expired (no dedicated wallet)")
-                
-        except Exception as e:
-            logger.error(f"Failed to expire gift card {card.id[:8]}: {e}")
+            await update_wallet_balance(wallet=card_wallet, amount=-card.amount)
+            await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
+        except Exception as exc:
+            logger.error(f"Reclaim failed for expired card {card.id}: {exc}")
+    else:
+        # D-04 fallback: no dedicated wallet was ever funded separately,
+        # so the issuer wallet is credited directly.
+        try:
+            await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
+        except Exception as exc:
+            logger.error(f"Reclaim failed for expired card {card.id}: {exc}")

@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
@@ -98,7 +99,7 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
         raise HTTPException(status_code=404, detail="Gift card not found")
     
     # Determine status
-    now = card.created_at.utcnow().replace(tzinfo=card.created_at.tzinfo)
+    now = datetime.now()
     if card.status == "expired":
         status = "expired"
     elif card.status == "redeemed":
@@ -107,7 +108,7 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
         status = "expired"
     else:
         status = "active"
-    
+
     return PublicGiftCard(
         status=status,
         amount=card.amount,
@@ -120,26 +121,26 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
 
 
 @giftcards_lnurl_router.get("/{token_hash}")
-async def lnurl_params(token_hash: str, request: Request) -> LnurlWithdrawResponse:
+async def lnurl_params(
+    token_hash: str, request: Request
+) -> LnurlWithdrawResponse | LnurlErrorResponse:
     """LNURL-withdraw parameters endpoint."""
     card = await get_card_by_token_hash(token_hash)
     if not card:
-        raise HTTPException(status_code=404, detail="Gift card not found")
-    
-    # Check if card is active and not expired
-    now = card.created_at.utcnow().replace(tzinfo=card.created_at.tzinfo)
-    if card.status != "active" or (card.expires_at and now > card.expires_at):
-        raise HTTPException(status_code=410, detail="Gift card is not redeemable")
-    
+        return LnurlErrorResponse(reason="Gift card not found")
+
+    if card.status != "active":
+        return LnurlErrorResponse(reason=f"Gift card is {card.status}")
+
     # Build callback URL
     callback_url = str(request.url_for("giftcards.lnurl_callback"))
-    
+
     return LnurlWithdrawResponse(
         callback=CallbackUrl(callback_url),
         k1=token_hash,
         tag="withdrawRequest",
-        minWithdrawable=MilliSatoshi(card.amount * 1000),  # Convert to millisats
-        maxWithdrawable=MilliSatoshi(card.amount * 1000),  # Convert to millisats
+        minWithdrawable=MilliSatoshi(card.amount * 1000),
+        maxWithdrawable=MilliSatoshi(card.amount * 1000),
         defaultDescription=f"Gift card {card.id[:8]}",
     )
 
@@ -203,10 +204,10 @@ async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Gift card not found")
     
     # Check if card is active and not expired
-    now = card.created_at.utcnow().replace(tzinfo=card.created_at.tzinfo)
+    now = datetime.now()
     if card.status != "active" or (card.expires_at and now > card.expires_at):
         raise HTTPException(status_code=410, detail="Gift card is not redeemable")
-    
+
     # Build LNURL URL
     lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
     

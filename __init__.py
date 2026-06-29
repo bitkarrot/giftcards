@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from loguru import logger
 
 from .crud import db
-from .services import expire_gift_cards
+from .tasks import wait_for_expiry
 from .views import giftcards_generic_router
 from .views_api import giftcards_api_router, giftcards_lnurl_router
 
@@ -37,7 +37,7 @@ def giftcards_start():
     from lnbits.tasks import create_permanent_unique_task
 
     # Start expiry sweep task (D-09, D-10)
-    task = create_permanent_unique_task("ext_giftcards", expire_gift_cards)
+    task = create_permanent_unique_task("ext_giftcards", wait_for_expiry)
     scheduled_tasks.append(task)
 
 
