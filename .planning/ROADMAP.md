@@ -29,7 +29,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Recipient can redeem the card by scanning the QR code with any Lightning wallet; the payout completes successfully.
   4. A card that has already been redeemed cannot be redeemed again, and concurrent redemption attempts do not result in double-spend.
   5. An expired card displays an expired status and cannot be redeemed; any locked sats are automatically returned to the issuer wallet.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 01-PLAN.md — Walking skeleton: create, fund, and redeem a gift card end-to-end
+- [ ] 01-PLAN-2.md — Harden redemption: atomic guard, concurrency, and failure recovery
+- [ ] 01-PLAN-3.md — Expiry sweep, sats reclaim, and security acceptance review
+
 **UI hint**: yes
 
 ### Phase 2: Branded Delivery
