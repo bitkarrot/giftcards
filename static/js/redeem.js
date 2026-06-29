@@ -4,7 +4,8 @@ window.PageGiftCardsRedeem = {
     return {
       giftCard: null,
       loading: true,
-      tokenHash: null
+      tokenHash: null,
+      error: false
     }
   },
   computed: {
@@ -27,8 +28,18 @@ window.PageGiftCardsRedeem = {
   },
   async mounted() {
     await this.loadGiftCard()
+    // A wallet that fails the LNURL callback may return the user to this page
+    // with ?error=1. Show the error state without reloading the page.
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === '1') {
+      this.error = true
+    }
   },
   methods: {
+    clearError() {
+      this.error = false
+    },
+
     async loadGiftCard() {
       this.loading = true
       try {

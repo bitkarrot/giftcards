@@ -10,6 +10,27 @@
         </q-card-section>
       </q-card>
 
+      <!-- Callback Error State -->
+      <q-card class="q-pa-lg" v-else-if="giftCard && giftCard.status === 'active' && error">
+        <q-card-section class="q-pa-none">
+          <div class="text-center">
+            <q-icon name="error_outline" color="negative" size="64px" />
+            <h5 class="text-h6 q-mt-md">Redemption failed</h5>
+            <p class="text-body2 text-grey">
+              Redemption failed. Please scan the QR code again or try a different wallet.
+            </p>
+            <q-btn
+              unelevated
+              color="primary"
+              size="lg"
+              @click="clearError"
+            >
+              Try Again
+            </q-btn>
+          </div>
+        </q-card-section>
+      </q-card>
+
       <!-- Active State -->
       <q-card class="q-pa-lg" v-else-if="giftCard && giftCard.status === 'active'">
         <q-card-section class="q-pa-none">
