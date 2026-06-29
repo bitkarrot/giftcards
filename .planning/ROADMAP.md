@@ -32,9 +32,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-PLAN.md — Walking skeleton: create, fund, and redeem a gift card end-to-end
-- [ ] 01-PLAN-2.md — Harden redemption: atomic guard, concurrency, and failure recovery
-- [ ] 01-PLAN-3.md — Expiry sweep, sats reclaim, and security acceptance review
+- [ ] 01-01-PLAN.md — Walking skeleton: create, fund, and redeem a gift card end-to-end
+- [ ] 01-02-PLAN.md — Harden redemption: atomic guard, concurrency, and failure recovery
+- [ ] 01-03-PLAN.md — Expiry sweep, sats reclaim, and security acceptance review
 
 **UI hint**: yes
 
@@ -71,6 +71,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Loop | 0/TBD | Not started | - |
+| 1. Core Loop | 0/3 | Not started | - |
 | 2. Branded Delivery | 0/TBD | Not started | - |
 | 3. Scale & Manage | 0/TBD | Not started | - |
