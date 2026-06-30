@@ -282,7 +282,10 @@ async def test_bulk_create_request_csv_mode_converts_to_create_gift_card():
 
     assert len(responses) == 2
     # Verify create_gift_card was called with per-row amounts
-    call_args = [c.kwargs or {} for c in mock_create.call_args_list]
-    # Check the data argument (positional) has correct amounts
-    amounts = [c.args[0].amount for c in mock_create.call_args_list]
+    amounts = []
+    for c in mock_create.call_args_list:
+        if c.args:
+            amounts.append(c.args[0].amount)
+        elif "data" in c.kwargs:
+            amounts.append(c.kwargs["data"].amount)
     assert amounts == [1000, 2000]

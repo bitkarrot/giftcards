@@ -1,14 +1,16 @@
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, root_validator
 
 # Allowlists for filesystem-interpolated design fields (H-1: path traversal defense)
 ALLOWED_FONTS = {"DejaVuSans", "DejaVuSerif", "DejaVuSansMono"}
 ALLOWED_TEMPLATES = {"portrait", "landscape", "custom"}
 ALLOWED_TEXT_ALIGN = {"left", "center", "right"}
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# Bech32 npub format: starts with "npub1", followed by alphanumeric chars, total ~62-64
+_NPUB_RE = re.compile(r"^npub1[023456789acdefghjklmnpqrstuvwxyz]{58,60}$")
 
 
 def _normalize_email(v: Optional[str]) -> Optional[str]:
@@ -217,37 +219,169 @@ class CreateGiftCardResponse(BaseModel):
     lnurl_url: str
 
 
+class CSVRow(BaseModel):
+    """A single row from a CSV bulk upload file.
+
+    Per D-05 — required: recipient_name, amount_sats; optional: rest.
+    Per D-06 — per-row design columns map to DesignConfig fields.
+    """
+    row_num: int
+    recipient_name: str
+    amount_sats: int = Field(..., gt=0)
+    recipient_email: Optional[str] = None
+    nostr_npub: Optional[str] = None
+    sender_name: Optional[str] = None
+    message: Optional[str] = None
+    template_name: Optional[str] = None
+    qr_x_frac: Optional[float] = None
+    qr_y_frac: Optional[float] = None
+    qr_size: Optional[int] = None
+    text_x_frac: Optional[float] = None
+    text_y_frac: Optional[float] = None
+    font_family: Optional[str] = None
+    font_size: Optional[int] = None
+    font_color: Optional[str] = None
+    text_align: Optional[str] = None
+
+    @validator("recipient_email")
+    def _normalize_recipient_email(cls, v):
+        return _normalize_email(v)
+
+    @validator("amount_sats")
+    def _positive_amount(cls, v):
+        if v <= 0:
+            raise ValueError("amount_sats must be greater than 0")
+        return v
+
+    @validator("nostr_npub")
+    def _validate_npub(cls, v):
+        if v is None or v == "":
+            return None
+        if not _NPUB_RE.match(v):
+            raise ValueError("Invalid npub format")
+        return v
+
+    @validator("template_name")
+    def _validate_template_name(cls, v):
+        if v is None or v == "":
+            return None
+        if v not in ALLOWED_TEMPLATES:
+            raise ValueError(
+                f"Invalid template_name; must be one of {sorted(ALLOWED_TEMPLATES)}"
+            )
+        return v
+
+    @validator("font_family")
+    def _validate_font_family(cls, v):
+        if v is None or v == "":
+            return None
+        if v not in ALLOWED_FONTS:
+            raise ValueError(
+                f"Invalid font_family; must be one of {sorted(ALLOWED_FONTS)}"
+            )
+        return v
+
+    @validator("font_color")
+    def _validate_font_color(cls, v):
+        if v is None or v == "":
+            return None
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("font_color must be a #RRGGBB hex color")
+        return v
+
+    @validator("text_align")
+    def _validate_text_align(cls, v):
+        if v is None or v == "":
+            return None
+        if v not in ALLOWED_TEXT_ALIGN:
+            raise ValueError(
+                f"Invalid text_align; must be one of {sorted(ALLOWED_TEXT_ALIGN)}"
+            )
+        return v
+
+
+class CSVValidationError(BaseModel):
+    """A single validation error from a CSV row."""
+    row_num: int
+    field: str
+    message: str
+
+
+class CSVValidationResult(BaseModel):
+    """Result of validating a CSV file — per-row validation table + summary.
+
+    Per D-07.
+    """
+    valid_count: int
+    error_count: int
+    valid_rows: List[CSVRow] = []
+    errors: List[CSVValidationError] = []
+
+
+class UpdateCardRequest(BaseModel):
+    """Request body for PUT /cards/{card_id}.
+
+    Per D-15 — amount is NOT editable (requires cancel + recreate).
+    All other metadata fields are directly editable.
+    """
+    recipient_name: Optional[str] = None
+    sender_name: Optional[str] = None
+    message: Optional[str] = None
+    recipient_email: Optional[str] = None
+
+    @validator("recipient_email")
+    def _normalize_recipient_email(cls, v):
+        return _normalize_email(v)
+
+
 class BulkCreateRequest(BaseModel):
-    """Request body for bulk same-amount gift card creation.
+    """Request body for bulk gift card creation.
 
     Per D-02 (number input for quantity) and D-08 (500 row max).
-    Plan 02 will extend this model with optional `rows` and `design_mode`
-    fields for CSV bulk create mode; Plan 01 creates the same-amount version.
+    Supports two modes:
+    - Same-amount mode: count + amount (both required)
+    - CSV mode: rows (list of CSVRow) + design_mode (count/amount optional)
     """
-    count: int = Field(..., gt=0, le=500, description="Number of cards to create (max 500)")
-    amount: int = Field(..., gt=0, description="Amount in sats for each card")
+    count: Optional[int] = Field(None, gt=0, le=500, description="Number of cards to create (max 500)")
+    amount: Optional[int] = Field(None, gt=0, description="Amount in sats for each card")
     recipient_name: Optional[str] = None
     sender_name: Optional[str] = None
     message: Optional[str] = None
     expires_at: Optional[datetime] = None
     recipient_email: Optional[str] = None
     design: Optional[DesignConfig] = None
+    rows: Optional[List[CSVRow]] = None
+    design_mode: Optional[str] = None
 
     @validator("count")
     def _max_count(cls, v):
-        if v > 500:
+        if v is not None and v > 500:
             raise ValueError("count must be at most 500")
         return v
 
     @validator("amount")
     def _positive_amount(cls, v):
-        if v <= 0:
+        if v is not None and v <= 0:
             raise ValueError("amount must be greater than 0")
         return v
 
     @validator("recipient_email")
     def _normalize_recipient_email(cls, v):
         return _normalize_email(v)
+
+    @root_validator
+    def _validate_mode(cls, values):
+        count = values.get("count")
+        amount = values.get("amount")
+        rows = values.get("rows")
+        # Either (count AND amount) OR rows must be provided
+        has_same_amount = count is not None and amount is not None
+        has_csv = rows is not None and len(rows) > 0
+        if not has_same_amount and not has_csv:
+            raise ValueError(
+                "Provide either count+amount for same-amount bulk, or rows for CSV bulk"
+            )
+        return values
 
     @validator("expires_at", pre=True)
     def parse_expires_at(cls, v):

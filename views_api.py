@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import asyncio
 import hashlib
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
 from lnbits.core.models import WalletTypeInfo
@@ -31,6 +31,8 @@ from .crud import (
     invalidate_magic_links_for_email,
     update_card_recipient_email,
     update_card_email_status,
+    delete_card,
+    update_card_fields,
 )
 from .models import (
     CreateGiftCard,
@@ -40,6 +42,11 @@ from .models import (
     DeliverRequest,
     BulkCreateRequest,
     CardDetailResponse,
+    CSVRow,
+    CSVValidationError,
+    CSVValidationResult,
+    UpdateCardRequest,
+    DesignConfig,
 )
 from .services import (
     create_gift_card,
@@ -48,6 +55,9 @@ from .services import (
     render_card_image,
     make_qr_png,
     generate_magic_link,
+    parse_csv,
+    validate_csv_rows,
+    reclaim_sats_and_delete,
 )
 
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
@@ -81,25 +91,72 @@ async def api_bulk_create(
     request: Request,
     wallet: WalletTypeInfo = Depends(require_admin_key),
 ) -> dict:
-    """Create multiple gift cards with the same sats amount.
+    """Create multiple gift cards — same-amount or CSV mode.
 
     Per D-09 (POST /cards/bulk) and D-10 (admin key for writes).
-    Builds count CreateGiftCard objects from the BulkCreateRequest
-    (same amount, same metadata) and calls bulk_create_with_funding.
+    Same-amount mode: builds count CreateGiftCard objects from count+amount.
+    CSV mode (data.rows present): converts each CSVRow to a CreateGiftCard
+    with per-row amounts and metadata, applies design per design_mode.
     """
     try:
-        rows = [
-            CreateGiftCard(
-                amount=data.amount,
-                recipient_name=data.recipient_name,
-                sender_name=data.sender_name,
-                message=data.message,
-                expires_at=data.expires_at,
-                recipient_email=data.recipient_email,
-                design=data.design,
-            )
-            for _ in range(data.count)
-        ]
+        if data.rows is not None and len(data.rows) > 0:
+            # CSV mode — convert CSVRow objects to CreateGiftCard objects
+            rows: list[CreateGiftCard] = []
+            for csv_row in data.rows:
+                # Build design config per row based on design_mode
+                design = None
+                if data.design_mode == "shared":
+                    design = data.design
+                elif data.design_mode == "per_row":
+                    # Build DesignConfig from CSVRow design fields
+                    design_fields = {}
+                    if csv_row.template_name is not None:
+                        design_fields["template_name"] = csv_row.template_name
+                    if csv_row.qr_x_frac is not None:
+                        design_fields["qr_x_frac"] = csv_row.qr_x_frac
+                    if csv_row.qr_y_frac is not None:
+                        design_fields["qr_y_frac"] = csv_row.qr_y_frac
+                    if csv_row.qr_size is not None:
+                        design_fields["qr_size"] = csv_row.qr_size
+                    if csv_row.text_x_frac is not None:
+                        design_fields["text_x_frac"] = csv_row.text_x_frac
+                    if csv_row.text_y_frac is not None:
+                        design_fields["text_y_frac"] = csv_row.text_y_frac
+                    if csv_row.font_family is not None:
+                        design_fields["font_family"] = csv_row.font_family
+                    if csv_row.font_size is not None:
+                        design_fields["font_size"] = csv_row.font_size
+                    if csv_row.font_color is not None:
+                        design_fields["font_color"] = csv_row.font_color
+                    if csv_row.text_align is not None:
+                        design_fields["text_align"] = csv_row.text_align
+                    if design_fields:
+                        design = DesignConfig(**design_fields)
+                # design_mode == "none" → design stays None
+
+                rows.append(CreateGiftCard(
+                    amount=csv_row.amount_sats,
+                    recipient_name=csv_row.recipient_name,
+                    recipient_email=csv_row.recipient_email,
+                    sender_name=csv_row.sender_name,
+                    message=csv_row.message,
+                    design=design,
+                ))
+        else:
+            # Same-amount mode — build count identical CreateGiftCard objects
+            rows = [
+                CreateGiftCard(
+                    amount=data.amount,
+                    recipient_name=data.recipient_name,
+                    sender_name=data.sender_name,
+                    message=data.message,
+                    expires_at=data.expires_at,
+                    recipient_email=data.recipient_email,
+                    design=data.design,
+                )
+                for _ in range(data.count)
+            ]
+
         responses = await bulk_create_with_funding(
             rows=rows,
             issuer_wallet_id=wallet.wallet.id,
@@ -136,6 +193,39 @@ async def api_get_cards(
     except Exception as e:
         logger.error(f"Failed to get cards: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve cards")
+
+
+@giftcards_api_router.post("/validate-csv")
+async def api_validate_csv(
+    file: UploadFile = File(...),
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> CSVValidationResult:
+    """Validate a CSV file and return per-row validation results.
+
+    Per D-07 (validate before create) and D-08 (500 row max).
+    Does NOT create any cards — two-phase flow.
+    NOTE: This route is defined BEFORE /{card_id} routes to avoid path conflicts.
+    """
+    try:
+        content = await file.read()
+        rows = parse_csv(content)
+        if len(rows) > 500:
+            raise HTTPException(
+                status_code=422,
+                detail="CSV exceeds 500 row maximum",
+            )
+        valid, errors = validate_csv_rows(rows)
+        return CSVValidationResult(
+            valid_count=len(valid),
+            error_count=len(errors),
+            valid_rows=valid,
+            errors=errors,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to validate CSV: {e}")
+        raise HTTPException(status_code=500, detail="Failed to validate CSV")
 
 
 @giftcards_api_router.get("/public/{token_hash}")
@@ -374,6 +464,63 @@ async def api_get_card_detail(
         email_status=card.email_status,
         redemption_url=card.redemption_url if include_link else None,
     )
+
+
+@giftcards_api_router.put("/{card_id}")
+async def api_update_card(
+    card_id: str,
+    data: UpdateCardRequest,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Update card metadata fields.
+
+    Per D-15 — amount is NOT editable (requires cancel + recreate).
+    Only recipient_name, sender_name, message, recipient_email are updatable.
+    Returns 404 if not found, 403 if card belongs to a different wallet.
+    """
+    card = await get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    if card.wallet != wallet.wallet.id:
+        raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
+
+    updates = data.dict(exclude_none=True)
+    if updates:
+        await update_card_fields(card_id, updates)
+
+    return {"status": "updated"}
+
+
+@giftcards_api_router.delete("/{card_id}")
+async def api_delete_card(
+    card_id: str,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Delete a gift card with sats reclaim.
+
+    Per D-16 — hard delete with sats reclaim:
+    - Active cards: reclaim sats to issuer wallet, then delete.
+    - Expired cards: sats already reclaimed, just delete.
+    - Redeemed cards: return 409 (cannot be deleted).
+    Returns 404 if not found, 403 if card belongs to a different wallet.
+    """
+    card = await get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    if card.wallet != wallet.wallet.id:
+        raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
+
+    if card.status == "redeemed":
+        raise HTTPException(status_code=409, detail="Redeemed cards cannot be deleted")
+
+    await reclaim_sats_and_delete(card)
+
+    return {
+        "status": "deleted",
+        "reclaimed_sats": card.amount if card.status == "active" else 0,
+    }
 
 
 # ---------------------------------------------------------------------------

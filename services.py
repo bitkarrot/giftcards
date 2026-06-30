@@ -1,9 +1,10 @@
 import asyncio
+import csv
 import hashlib
 import json
 import secrets
 from datetime import datetime, timezone
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Optional
 
@@ -15,9 +16,18 @@ from lnbits.core.services.payments import update_wallet_balance, pay_invoice
 from lnbits.exceptions import PaymentError
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
+from pydantic import ValidationError
 
-from .crud import create_card, get_card_by_token_hash, create_magic_link
-from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary, DesignConfig
+from .crud import create_card, get_card_by_token_hash, create_magic_link, delete_card
+from .models import (
+    CreateGiftCard,
+    GiftCard,
+    CreateGiftCardResponse,
+    GiftCardSummary,
+    DesignConfig,
+    CSVRow,
+    CSVValidationError,
+)
 
 def generate_token() -> tuple[str, str]:
     """Generate a secure token and return (raw_token, token_hash)."""
@@ -208,6 +218,63 @@ async def reclaim_card_sats(card: GiftCard) -> None:
         await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
     except Exception as exc:
         logger.error(f"Reclaim failed for expired card {card.id}: {exc}")
+
+
+async def reclaim_sats_and_delete(card: GiftCard) -> None:
+    """Reclaim sats (if active) and hard-delete the card record.
+
+    Per D-16:
+    - Active cards: reclaim sats to issuer wallet, then delete.
+    - Expired cards: skip reclaim (sats already reclaimed by expiry task), then delete.
+    - Redeemed cards: caller must reject with 409 BEFORE calling this function.
+    """
+    if card.status == "active":
+        await reclaim_card_sats(card)
+    # expired: sats already reclaimed by expiry task — skip
+    # redeemed: caller rejects before reaching here
+    await delete_card(card.id)
+
+
+def parse_csv(content: bytes) -> list[dict]:
+    """Parse CSV bytes into a list of dicts with row_num keys.
+
+    Uses csv.DictReader and utf-8-sig decode (strips BOM).
+    Row numbering starts at 2 (row 1 is the header).
+    Per RESEARCH.md — stdlib csv.DictReader, no pandas.
+    """
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(StringIO(text))
+    rows = []
+    for idx, row in enumerate(reader):
+        row["row_num"] = idx + 2  # row 1 is header
+        rows.append(row)
+    return rows
+
+
+def validate_csv_rows(rows: list[dict]) -> tuple[list[CSVRow], list[CSVValidationError]]:
+    """Validate parsed CSV rows against the CSVRow Pydantic model.
+
+    Returns (valid_rows, errors). Empty strings are cleaned to None before
+    validation. Per D-07 — per-row validation, no partial create.
+    """
+    valid: list[CSVRow] = []
+    errors: list[CSVValidationError] = []
+    for row in rows:
+        row_num = row.get("row_num", 0)
+        # Clean empty strings to None
+        cleaned = {k: (v if v != "" else None) for k, v in row.items()}
+        try:
+            csv_row = CSVRow(**cleaned)
+            valid.append(csv_row)
+        except ValidationError as exc:
+            for err in exc.errors():
+                field = err.get("loc", [""])[0] if err.get("loc") else ""
+                errors.append(CSVValidationError(
+                    row_num=row_num,
+                    field=str(field),
+                    message=err.get("msg", "Validation error"),
+                ))
+    return valid, errors
 
 
 # ---------------------------------------------------------------------------
