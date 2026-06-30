@@ -132,6 +132,36 @@ async def update_card_recipient_email(card_id: str, email: str) -> None:
     )
 
 
+async def delete_card(card_id: str) -> None:
+    """Hard-delete a card record by id."""
+    await db.execute(
+        "DELETE FROM giftcards.cards WHERE id = :id",
+        {"id": card_id},
+    )
+
+
+async def update_card_fields(card_id: str, fields: dict) -> None:
+    """Update editable card metadata fields.
+
+    Only recipient_name, sender_name, message, recipient_email are allowed
+    (per D-15 — amount changes require cancel + recreate).
+    """
+    allowed = {"recipient_name", "sender_name", "message", "recipient_email"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+    set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
+    params = {"id": card_id, **updates}
+    await db.execute(
+        f"""
+        UPDATE giftcards.cards
+        SET {set_clauses}
+        WHERE id = :id
+        """,
+        params,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Magic link CRUD (Phase 2 — plan 02-03)
 # ---------------------------------------------------------------------------

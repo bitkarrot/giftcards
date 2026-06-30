@@ -83,3 +83,14 @@ async def m003_branded_delivery(db):
     await db.execute(
         f"CREATE INDEX IF NOT EXISTS idx_giftcards_magic_links_token_hash ON {table}(token_hash);"
     )
+
+
+async def m004_dashboard_indexes(db):
+    """Add index on (wallet, status, created_at) for filtered dashboard query performance."""
+    table = f"{db.references_schema}cards"
+    await db.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_giftcards_cards_wallet_status_created
+        ON {table}(wallet, status, created_at);
+        """
+    )

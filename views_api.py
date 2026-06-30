@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 import asyncio
 import hashlib
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
 from lnbits.core.models import WalletTypeInfo
-from lnbits.decorators import require_admin_key
+from lnbits.decorators import require_admin_key, require_invoice_key
 from lnurl import (
     CallbackUrl,
     LnurlErrorResponse,
@@ -38,9 +38,12 @@ from .models import (
     PublicGiftCard,
     ClaimRequest,
     DeliverRequest,
+    BulkCreateRequest,
+    CardDetailResponse,
 )
 from .services import (
     create_gift_card,
+    bulk_create_with_funding,
     pay_and_complete,
     render_card_image,
     make_qr_png,
@@ -72,11 +75,61 @@ async def api_create_card(
         raise HTTPException(status_code=500, detail="Failed to create gift card")
 
 
+@giftcards_api_router.post("/bulk")
+async def api_bulk_create(
+    data: BulkCreateRequest,
+    request: Request,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Create multiple gift cards with the same sats amount.
+
+    Per D-09 (POST /cards/bulk) and D-10 (admin key for writes).
+    Builds count CreateGiftCard objects from the BulkCreateRequest
+    (same amount, same metadata) and calls bulk_create_with_funding.
+    """
+    try:
+        rows = [
+            CreateGiftCard(
+                amount=data.amount,
+                recipient_name=data.recipient_name,
+                sender_name=data.sender_name,
+                message=data.message,
+                expires_at=data.expires_at,
+                recipient_email=data.recipient_email,
+                design=data.design,
+            )
+            for _ in range(data.count)
+        ]
+        responses = await bulk_create_with_funding(
+            rows=rows,
+            issuer_wallet_id=wallet.wallet.id,
+            user_id=wallet.wallet.user,
+            base_url=str(request.base_url),
+        )
+        return {
+            "created": len(responses),
+            "card_ids": [r.card.id for r in responses],
+        }
+    except Exception as e:
+        logger.error(f"Failed to bulk create gift cards: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create gift cards")
+
+
 @giftcards_api_router.get("")
 async def api_get_cards(
-    wallet: WalletTypeInfo = Depends(require_admin_key),
+    status: str | None = Query(None),
+    search: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    wallet: WalletTypeInfo = Depends(require_invoice_key),
 ) -> list[GiftCardSummary]:
-    """Get all gift cards for the authenticated wallet."""
+    """Get all gift cards for the authenticated wallet.
+
+    Per D-10 (invoice key for reads). Filter params (status, search,
+    date_from, date_to) are accepted but filtering logic is implemented
+    in Plan 03 — this plan just adds the params to the signature so the
+    frontend can start sending them. Per D-12.
+    """
     try:
         cards = await get_cards_by_wallet(wallet.wallet.id)
         return cards
@@ -286,6 +339,40 @@ async def api_card_print(
             "Pragma": "no-cache",
             "Expires": "0",
         },
+    )
+
+
+@giftcards_api_router.get("/{card_id}")
+async def api_get_card_detail(
+    card_id: str,
+    include_link: bool = Query(False),
+    wallet: WalletTypeInfo = Depends(require_invoice_key),
+) -> CardDetailResponse:
+    """Get detailed card info for the authenticated wallet.
+
+    Per D-10 (invoice key for reads) and D-11 (include_link opt-in).
+    redemption_url is None unless ?include_link=true is explicitly passed.
+    Returns 404 if card not found, 403 if card belongs to a different wallet.
+    """
+    card = await get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    if card.wallet != wallet.wallet.id:
+        raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
+
+    return CardDetailResponse(
+        card_id=card.id,
+        amount=card.amount,
+        status=card.status,
+        recipient_name=card.recipient_name,
+        sender_name=card.sender_name,
+        message=card.message,
+        created_at=card.created_at,
+        expires_at=card.expires_at,
+        redeemed_at=card.redeemed_at,
+        email_status=card.email_status,
+        redemption_url=card.redemption_url if include_link else None,
     )
 
 

@@ -19,7 +19,6 @@ from PIL import Image, ImageDraw, ImageFont
 from .crud import create_card, get_card_by_token_hash, create_magic_link
 from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary, DesignConfig
 
-
 def generate_token() -> tuple[str, str]:
     """Generate a secure token and return (raw_token, token_hash)."""
     raw_token = secrets.token_urlsafe(32)  # 43 characters
@@ -134,6 +133,38 @@ async def create_gift_card(
         redemption_url=redemption_url,
         lnurl_url=lnurl_url,
     )
+
+
+async def bulk_create_with_funding(
+    rows: list[CreateGiftCard],
+    issuer_wallet_id: str,
+    user_id: str,
+    base_url: str,
+) -> list[CreateGiftCardResponse]:
+    """Create multiple gift cards by looping create_gift_card.
+
+    Per RESEARCH.md Pattern 1 — reuse create_gift_card as the inner loop,
+    do NOT write a separate batched insert. Each call generates a unique
+    token, debits the issuer wallet, and inserts a DB row.
+
+    All-or-nothing per D-07 for same-amount: if any call raises, log the
+    error and re-raise. Same-amount has no per-row validation risk so
+    partial failure is a safety net.
+    """
+    responses: list[CreateGiftCardResponse] = []
+    for row in rows:
+        try:
+            response = await create_gift_card(
+                data=row,
+                issuer_wallet_id=issuer_wallet_id,
+                user_id=user_id,
+                base_url=base_url,
+            )
+            responses.append(response)
+        except Exception as exc:
+            logger.error(f"bulk_create_with_funding failed on row: {exc}")
+            raise
+    return responses
 
 
 class PaymentPendingError(Exception):

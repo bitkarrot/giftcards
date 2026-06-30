@@ -215,3 +215,72 @@ class CreateGiftCardResponse(BaseModel):
     raw_token: str
     redemption_url: str
     lnurl_url: str
+
+
+class BulkCreateRequest(BaseModel):
+    """Request body for bulk same-amount gift card creation.
+
+    Per D-02 (number input for quantity) and D-08 (500 row max).
+    Plan 02 will extend this model with optional `rows` and `design_mode`
+    fields for CSV bulk create mode; Plan 01 creates the same-amount version.
+    """
+    count: int = Field(..., gt=0, le=500, description="Number of cards to create (max 500)")
+    amount: int = Field(..., gt=0, description="Amount in sats for each card")
+    recipient_name: Optional[str] = None
+    sender_name: Optional[str] = None
+    message: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    recipient_email: Optional[str] = None
+    design: Optional[DesignConfig] = None
+
+    @validator("count")
+    def _max_count(cls, v):
+        if v > 500:
+            raise ValueError("count must be at most 500")
+        return v
+
+    @validator("amount")
+    def _positive_amount(cls, v):
+        if v <= 0:
+            raise ValueError("amount must be greater than 0")
+        return v
+
+    @validator("recipient_email")
+    def _normalize_recipient_email(cls, v):
+        return _normalize_email(v)
+
+    @validator("expires_at", pre=True)
+    def parse_expires_at(cls, v):
+        """Accept date-only strings (from HTML <input type="date">) and convert to datetime."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            if len(v) == 10 and v.count("-") == 2:
+                return datetime.fromisoformat(v + "T23:59:59+00:00")
+            try:
+                dt = datetime.fromisoformat(v)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                pass
+        return v
+
+
+class CardDetailResponse(BaseModel):
+    """Detail response for GET /cards/{card_id}.
+
+    Per D-11 — redemption_url defaults to None, only populated when
+    include_link=true is explicitly passed.
+    """
+    card_id: str
+    amount: int
+    status: str
+    recipient_name: Optional[str] = None
+    sender_name: Optional[str] = None
+    message: Optional[str] = None
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    redeemed_at: Optional[datetime] = None
+    email_status: Optional[str] = None
+    redemption_url: Optional[str] = None
