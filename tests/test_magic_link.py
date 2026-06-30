@@ -350,6 +350,7 @@ def test_routes_json_has_claim():
     """routes.json contains claim route entries."""
     import json
     from pathlib import Path
+    import giftcards
     routes_path = Path(giftcards.__file__).resolve().parent / "static" / "routes.json"
     routes = json.loads(routes_path.read_text())
     claim_routes = [r for r in routes if "claim" in r["path"]]

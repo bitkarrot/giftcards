@@ -18,3 +18,18 @@ giftcards_generic_router.add_api_route(
     methods=["GET"],
     endpoint=index_public,
 )
+
+
+# Claim page routes (Phase 2 — plan 02-03, D-14)
+giftcards_generic_router.add_api_route(
+    "/claim",
+    methods=["GET"],
+    endpoint=index_public,
+)
+
+
+giftcards_generic_router.add_api_route(
+    "/claim/{magic_token}",
+    methods=["GET"],
+    endpoint=index_public,
+)

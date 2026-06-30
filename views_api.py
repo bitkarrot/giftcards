@@ -21,12 +21,32 @@ from .crud import (
     mark_redeeming,
     reset_card_to_active,
     get_cards_by_wallet,
+    count_recent_magic_links,
+    get_pending_cards_by_email,
+    get_magic_link_by_hash,
+    mark_magic_link_used,
+    invalidate_magic_links_for_email,
+    update_card_recipient_email,
+    update_card_email_status,
 )
-from .models import CreateGiftCard, GiftCardSummary, PublicGiftCard
-from .services import create_gift_card, pay_and_complete, render_card_image, make_qr_png
+from .models import (
+    CreateGiftCard,
+    GiftCardSummary,
+    PublicGiftCard,
+    ClaimRequest,
+    DeliverRequest,
+)
+from .services import (
+    create_gift_card,
+    pay_and_complete,
+    render_card_image,
+    make_qr_png,
+    generate_magic_link,
+)
 
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
 giftcards_lnurl_router = APIRouter(prefix="/api/v1/lnurl")
+giftcards_claim_router = APIRouter(prefix="/api/v1/claim")
 
 
 @giftcards_api_router.post("")
@@ -159,6 +179,9 @@ async def lnurl_callback(
     try:
         await pay_and_complete(card, pr)
         await mark_redeemed(card.id)
+        # Invalidate magic links for this email after redemption (D-16)
+        if card.recipient_email:
+            await invalidate_magic_links_for_email(card.recipient_email)
         return JSONResponse(content=LnurlSuccessResponse().dict())
     except Exception:
         # Log without exposing the raw token or internal details
@@ -261,3 +284,120 @@ async def api_card_print(
             "Expires": "0",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Email delivery endpoint (Phase 2 — plan 02-03)
+# ---------------------------------------------------------------------------
+
+@giftcards_api_router.post("/{card_id}/deliver")
+async def api_deliver_email(
+    card_id: str,
+    data: DeliverRequest,
+    request: Request,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Trigger email delivery for a gift card.
+
+    Updates recipient_email on the card, renders the email body (custom or fancy),
+    and sends via SMTP. Updates email_status on success/failure.
+    """
+    from .services import send_gift_card_email
+
+    card = await get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    # Verify card belongs to this wallet (T-02-03-09)
+    if card.wallet != wallet.wallet.id:
+        raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
+
+    # Update recipient email on the card
+    await update_card_recipient_email(card.id, data.recipient_email)
+
+    # Build claim URL (the claim page, NOT the redemption link — D-12)
+    claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
+
+    try:
+        await send_gift_card_email(
+            card=card,
+            claim_url=claim_url,
+            email_mode=data.email_mode,
+            subject=data.subject,
+            body=data.body,
+            template=data.template,
+        )
+        return {"status": "sent"}
+    except Exception as exc:
+        logger.warning(f"Email delivery failed for card {card.id[:8]}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Claim endpoints — magic link verification flow (Phase 2 — plan 02-03)
+# ---------------------------------------------------------------------------
+
+@giftcards_claim_router.post("")
+async def api_claim_cards(data: ClaimRequest, request: Request) -> dict:
+    """Public claim endpoint — accepts email, sends magic link if cards exist.
+
+    Always returns the same response message regardless of whether cards exist
+    for the email (D-14 — no email enumeration).
+
+    Rate-limited to 3 requests per email per hour (D-13).
+    """
+    # Rate limit check (DB-backed, checked BEFORE generating a link)
+    count = await count_recent_magic_links(data.email)
+    if count >= 3:
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait and try again.")
+
+    # Find pending cards for this email
+    pending = await get_pending_cards_by_email(data.email)
+
+    if pending:
+        # Generate magic link
+        # Use the first card's wallet for scoping
+        magic_token = await generate_magic_link(data.email, "claim_flow")
+        magic_link_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim/{magic_token}"
+
+        # Send notification email (fire-and-forget, but inline for MVP)
+        try:
+            from .services import send_notification_email
+            claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
+            # Build a temporary card-like object for the notification
+            first_card = pending[0]
+            await send_notification_email(
+                sender_name=first_card.get("sender_name") or "Anonymous",
+                recipient_email=data.email,
+                claim_url=claim_url,
+                magic_link_url=magic_link_url,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to send notification email to {data.email}: {exc}")
+
+    # Always return the same response (D-14 — no email enumeration)
+    return {"message": "If you have pending gift cards, a verification link has been sent to your email."}
+
+
+@giftcards_claim_router.get("/{magic_token}")
+async def api_verify_claim(magic_token: str) -> dict:
+    """Public magic link verification endpoint.
+
+    Hashes the token, looks up the magic link, and if valid returns a list of
+    pending cards with raw_tokens for redirect to the redemption page.
+
+    Returns 404 if the token is invalid or expired.
+    """
+    import hashlib
+
+    token_hash = hashlib.sha256(magic_token.encode()).hexdigest()
+    link = await get_magic_link_by_hash(token_hash)
+    if not link:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+
+    # Mark as used (single-use)
+    await mark_magic_link_used(token_hash)
+
+    # Get pending cards for this email
+    cards = await get_pending_cards_by_email(link.email)
+    return {"cards": cards}

@@ -16,7 +16,7 @@ from lnbits.exceptions import PaymentError
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 
-from .crud import create_card, get_card_by_token_hash
+from .crud import create_card, get_card_by_token_hash, create_magic_link
 from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary, DesignConfig
 
 
@@ -25,6 +25,15 @@ def generate_token() -> tuple[str, str]:
     raw_token = secrets.token_urlsafe(32)  # 43 characters
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     return raw_token, token_hash
+
+
+async def generate_magic_link(email: str, wallet: str) -> str:
+    """Generate a magic link for email verification and return the raw token.
+
+    Delegates to crud.create_magic_link which stores only the SHA-256 hash.
+    TTL is 30 minutes.
+    """
+    return await create_magic_link(email, wallet)
 
 
 async def create_gift_card(

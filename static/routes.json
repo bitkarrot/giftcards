@@ -10,5 +10,17 @@
     "name": "PageGiftCardsRedeem",
     "template": "/giftcards/static/js/redeem.vue",
     "component": "/giftcards/static/js/redeem.js"
+  },
+  {
+    "path": "/giftcards/claim",
+    "name": "PageGiftCardsClaim",
+    "template": "/giftcards/static/js/claim.vue",
+    "component": "/giftcards/static/js/claim.js"
+  },
+  {
+    "path": "/giftcards/claim/:magic_token",
+    "name": "PageGiftCardsClaimVerify",
+    "template": "/giftcards/static/js/claim.vue",
+    "component": "/giftcards/static/js/claim.js"
   }
 ]

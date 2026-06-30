@@ -6,12 +6,13 @@ from loguru import logger
 from .crud import db
 from .tasks import wait_for_expiry
 from .views import giftcards_generic_router
-from .views_api import giftcards_api_router, giftcards_lnurl_router
+from .views_api import giftcards_api_router, giftcards_lnurl_router, giftcards_claim_router
 
 giftcards_ext: APIRouter = APIRouter(prefix="/giftcards", tags=["GiftCards"])
 giftcards_ext.include_router(giftcards_generic_router)
 giftcards_ext.include_router(giftcards_api_router)
 giftcards_ext.include_router(giftcards_lnurl_router)
+giftcards_ext.include_router(giftcards_claim_router)
 
 giftcards_static_files = [
     {
