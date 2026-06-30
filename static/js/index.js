@@ -48,6 +48,13 @@ window.PageGiftCards = {
           sortable: true
         },
         {
+          name: 'delivery',
+          align: 'left',
+          label: 'Delivery',
+          field: row => row.email_status || 'not_sent',
+          sortable: true
+        },
+        {
           name: 'expires_at',
           align: 'left',
           label: 'Expires',
@@ -180,6 +187,49 @@ window.PageGiftCards = {
         case 'redeemed': return 'Redeemed'
         case 'expired': return 'Expired'
         default: return status
+      }
+    },
+
+    getDeliveryStatusColor(status) {
+      switch (status) {
+        case 'not_sent': return 'grey-6'
+        case 'sent': return 'positive'
+        case 'failed': return 'negative'
+        default: return 'grey'
+      }
+    },
+
+    getDeliveryStatusText(status) {
+      switch (status) {
+        case 'not_sent': return 'Not sent'
+        case 'sent': return 'Sent'
+        case 'failed': return 'Failed'
+        default: return status
+      }
+    },
+
+    async downloadPrintable(card) {
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
+        const url = `/giftcards/api/v1/cards/${card.id}/print`
+        const response = await fetch(url, {
+          headers: { 'X-Api-Key': wallet.adminkey }
+        })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        const blob = await response.blob()
+        const downloadUrl = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = downloadUrl
+        a.download = `giftcard_${card.id}.png`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(downloadUrl)
+        LNbits.utils.notify('Gift card image downloaded', 'positive')
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
       }
     },
 

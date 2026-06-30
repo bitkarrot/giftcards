@@ -51,11 +51,18 @@
             
             <q-separator class="q-my-md"></q-separator>
             
-            <p class="text-body2 q-mt-md">
+            <img
+              v-if="giftCard && giftCard.has_design"
+              :src="cardImageUrl"
+              alt="Branded gift card with QR code"
+              class="branded-card-img"
+            />
+
+            <p class="text-body2 q-mt-md" v-if="!giftCard || !giftCard.has_design">
               Scan with your Lightning wallet to redeem:
             </p>
             
-            <div class="row justify-center q-mb-md">
+            <div class="row justify-center q-mb-md" v-if="!giftCard || !giftCard.has_design">
               <img
                 :src="qrCodeUrl"
                 alt="LNURL QR code for gift card redemption"
@@ -132,10 +139,19 @@
   max-height: 300px;
 }
 
+.branded-card-img {
+  max-width: 400px;
+  width: 100%;
+  height: auto;
+}
+
 @media (max-width: 768px) {
   .qrcode-img {
     max-width: 240px;
     max-height: 240px;
+  }
+  .branded-card-img {
+    max-width: 320px;
   }
 }
 </style>

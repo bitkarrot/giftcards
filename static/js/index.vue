@@ -65,6 +65,14 @@
                       :label="getStatusText(col.value)"
                     ></q-badge>
                   </span>
+                  <span v-else-if="col.name === 'delivery'">
+                    <q-badge
+                      v-if="props.row.recipient_email"
+                      :color="getDeliveryStatusColor(col.value)"
+                      :label="getDeliveryStatusText(col.value)"
+                    ></q-badge>
+                    <span v-else class="text-caption text-grey">&mdash;</span>
+                  </span>
                   <span v-else-if="col.name === 'expires_at'">
                     {{ col.value || 'Never' }}
                   </span>
@@ -118,6 +126,19 @@
                             ></q-btn>
                           </template>
                         </q-input>
+                      </div>
+                      <div class="col-12">
+                        <q-btn
+                          unelevated
+                          dense
+                          size="sm"
+                          icon="download"
+                          :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
+                          @click="downloadPrintable(props.row)"
+                          aria-label="Download gift card image"
+                        >
+                          Download PNG
+                        </q-btn>
                       </div>
                     </div>
                   </div>

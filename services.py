@@ -43,6 +43,28 @@ async def create_gift_card(
     # Create card record
     card_id = f"gc_{token_hash[:16]}"
 
+    # Serialize design config into qr_config and text_config JSON columns
+    qr_config = None
+    text_config = None
+    template_asset_id = None
+    template_name = None
+    if data.design is not None:
+        qr_config = json.dumps({
+            "qr_x_frac": data.design.qr_x_frac,
+            "qr_y_frac": data.design.qr_y_frac,
+            "qr_size": data.design.qr_size,
+        })
+        text_config = json.dumps({
+            "text_x_frac": data.design.text_x_frac,
+            "text_y_frac": data.design.text_y_frac,
+            "font_family": data.design.font_family,
+            "font_size": data.design.font_size,
+            "font_color": data.design.font_color,
+            "text_align": data.design.text_align,
+        })
+        template_asset_id = data.design.template_asset_id
+        template_name = data.design.template_name
+
     card = GiftCard(
         id=card_id,
         wallet=issuer_wallet_id,
@@ -59,6 +81,11 @@ async def create_gift_card(
         created_at=datetime.now(timezone.utc),
         redeemed_at=None,
         expired_at=None,
+        template_asset_id=template_asset_id,
+        template_name=template_name,
+        qr_config=qr_config,
+        text_config=text_config,
+        recipient_email=data.recipient_email,
     )
 
     # Save card to database

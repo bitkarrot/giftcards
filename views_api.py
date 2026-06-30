@@ -92,6 +92,7 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
         message=card.message,
         expires_at=card.expires_at,
         expired_at=card.expired_at,
+        has_design=card.template_name is not None or card.template_asset_id is not None,
     )
 
 

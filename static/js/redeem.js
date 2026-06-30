@@ -14,6 +14,11 @@ window.PageGiftCardsRedeem = {
       const baseUrl = window.location.origin
       return `${baseUrl}/giftcards/api/v1/lnurl/${this.tokenHash}/qr`
     },
+    cardImageUrl() {
+      if (!this.tokenHash) return ''
+      const baseUrl = window.location.origin
+      return `${baseUrl}/giftcards/api/v1/cards/${this.tokenHash}/image`
+    },
     lightningUri() {
       if (!this.tokenHash) return ''
       const baseUrl = window.location.origin
