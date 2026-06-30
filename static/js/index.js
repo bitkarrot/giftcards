@@ -146,7 +146,7 @@ window.PageGiftCards = {
       }
       return {
         fontFamily: fontFamilyMap[this.selectedFont] || 'sans-serif',
-        fontSize: this.fontSize + 'px',
+        fontSize: Math.round(this.fontSize * this.previewScale) + 'px',
         color: this.fontColor,
         textAlign: alignMap[this.textAlign] || 'left',
         lineHeight: '1.3'
