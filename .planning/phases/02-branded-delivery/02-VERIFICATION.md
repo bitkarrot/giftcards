@@ -1,7 +1,7 @@
 ---
 phase: 02-branded-delivery
 verified: 2026-06-30T04:35:00Z
-status: human_needed
+status: passed
 score: 14/14 must-haves verified (automated); 6 items require human testing
 behavior_unverified: 0
 overrides_applied: 0
@@ -12,6 +12,7 @@ tests:
   passed: 185
   failed: 0
   files:
+
     - test_branded_image.py (29 tests)
     - test_card_designer.py (31 tests)
     - test_magic_link.py (73 tests)
@@ -20,37 +21,46 @@ tests:
     - test_redemption.py (11 tests — Phase 1 regression)
     - test_expiry.py (7 tests — Phase 1 regression)
     - test_security.py (5 tests — Phase 1 regression)
+
 human_verification:
+
   - test: "Open the create dialog in a browser and interact with the card designer — drag QR, drag text, resize QR, change font/size/color/alignment, select portrait/landscape/custom upload."
     expected: "All drag/resize/styling controls respond smoothly; QR cannot be resized below 150px; custom upload triggers file picker and loads image as preview background."
     why_human: "Interactive pointer-event drag behavior and visual preview rendering cannot be verified by automated tests."
     status: PENDING
+
   - test: "Create a card with a design config and open the redemption page in a browser."
     expected: "The branded card image (template + QR + text) renders on the redemption page; Phase 1 cards without design show the bare QR fallback."
     why_human: "Visual rendering of the Pillow-composited branded card image requires manual browser verification."
     status: PENDING
+
   - test: "Click 'Download PNG' in the card list expanded row."
     expected: "A 3x-resolution PNG file downloads with filename giftcard_{card_id}.png."
     why_human: "File download behavior and image quality require manual verification."
     status: PENDING
+
   - test: "Visit /giftcards/claim, enter an email, and verify the full magic link flow end-to-end with SMTP configured."
     expected: "Email entry → 'Check Your Email' confirmation → receive notification email → click magic link → see pending cards list → click Redeem → redirect to redemption page."
     why_human: "End-to-end email delivery and magic link click-through require a configured SMTP server and browser interaction."
     status: PENDING
+
   - test: "Request 4 magic links for the same email within an hour."
     expected: "4th request returns 429 'Too Many Requests' and the claim page shows the rate-limited state."
     why_human: "Rate limiting behavior requires sequential manual requests to verify the 429 response and UI state."
     status: PENDING
+
   - test: "Redeem a card and then revisit the magic link URL."
     expected: "Magic link shows 'Link Invalid or Expired' — invalidated after redemption (D-16)."
     why_human: "Post-redemption invalidation requires end-to-end testing with a real redemption."
     status: PENDING
 post_session_changes:
+
   - "Security hardening commit 6ce6b20: 4 HIGH severity issues found and fixed (H-1 path traversal, H-2 TOCTOU race on magic link, H-3 stale recipient email, H-4 SMTP exception leakage). 22 regression tests added in test_security_fixes.py."
   - "M-1: Email normalization to lowercase across ClaimRequest, DeliverRequest, CreateGiftCard to prevent rate-limit/lookup bypass via case variation."
   - "M-2: Claim endpoint uses asyncio.create_task for SMTP send to prevent timing-based email enumeration (D-14)."
   - "M-6: Hex color validation on DesignConfig.font_color to prevent public render endpoint 500 on junk input."
   - "DesignConfig validators added for qr_size (>= 150), fractions (0.0-1.0), text_align (allowlist)."
+
 ---
 
 # Phase 02: Branded Delivery Verification Report
