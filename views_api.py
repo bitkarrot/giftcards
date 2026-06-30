@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import asyncio
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
@@ -25,6 +27,7 @@ from .crud import (
     get_pending_cards_by_email,
     get_magic_link_by_hash,
     mark_magic_link_used,
+    mark_magic_link_used_if_unused,
     invalidate_magic_links_for_email,
     update_card_recipient_email,
     update_card_email_status,
@@ -314,6 +317,9 @@ async def api_deliver_email(
 
     # Update recipient email on the card
     await update_card_recipient_email(card.id, data.recipient_email)
+    # H-3: sync the in-memory object so send_gift_card_email addresses the
+    # NEW recipient, not the stale pre-update value.
+    card.recipient_email = data.recipient_email
 
     # Build claim URL (the claim page, NOT the redemption link — D-12)
     claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
@@ -329,8 +335,12 @@ async def api_deliver_email(
         )
         return {"status": "sent"}
     except Exception as exc:
+        # H-4: do not leak internal SMTP/exception details to the client.
         logger.warning(f"Email delivery failed for card {card.id[:8]}: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(
+            status_code=500,
+            detail="Email delivery failed. Check server logs.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -360,23 +370,47 @@ async def api_claim_cards(data: ClaimRequest, request: Request) -> dict:
         magic_token = await generate_magic_link(data.email, "claim_flow")
         magic_link_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim/{magic_token}"
 
-        # Send notification email (fire-and-forget, but inline for MVP)
-        try:
-            from .services import send_notification_email
-            claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
-            # Build a temporary card-like object for the notification
-            first_card = pending[0]
-            await send_notification_email(
+        # M-2: send the notification email via a fire-and-forget background
+        # task so the response latency does not leak whether cards exist
+        # (D-14 — no timing-based email enumeration). The DB row is already
+        # committed, so a crash here does not lose the magic link.
+        first_card = pending[0]
+        claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
+        asyncio.create_task(
+            _send_notification_safely(
                 sender_name=first_card.get("sender_name") or "Anonymous",
                 recipient_email=data.email,
                 claim_url=claim_url,
                 magic_link_url=magic_link_url,
             )
-        except Exception as exc:
-            logger.warning(f"Failed to send notification email to {data.email}: {exc}")
+        )
 
     # Always return the same response (D-14 — no email enumeration)
     return {"message": "If you have pending gift cards, a verification link has been sent to your email."}
+
+
+async def _send_notification_safely(
+    sender_name: str,
+    recipient_email: str,
+    claim_url: str,
+    magic_link_url: str,
+) -> None:
+    """Background-task wrapper that logs and swallows SMTP errors.
+
+    The magic link row is already persisted; a delivery failure here is
+    recoverable (recipient can re-request). We must never raise from a
+    fire-and-forget task created via `asyncio.create_task`.
+    """
+    try:
+        from .services import send_notification_email
+        await send_notification_email(
+            sender_name=sender_name,
+            recipient_email=recipient_email,
+            claim_url=claim_url,
+            magic_link_url=magic_link_url,
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to send notification email to {recipient_email}: {exc}")
 
 
 @giftcards_claim_router.get("/{magic_token}")
@@ -387,16 +421,22 @@ async def api_verify_claim(magic_token: str) -> dict:
     pending cards with raw_tokens for redirect to the redemption page.
 
     Returns 404 if the token is invalid or expired.
-    """
-    import hashlib
 
+    H-2: the single-use claim is enforced atomically via
+    `mark_magic_link_used_if_unused` — the check-and-set is a single UPDATE
+    that only succeeds if `used_at IS NULL`, so concurrent requests with the
+    same token cannot both receive the pending cards list.
+    """
     token_hash = hashlib.sha256(magic_token.encode()).hexdigest()
     link = await get_magic_link_by_hash(token_hash)
     if not link:
         raise HTTPException(status_code=404, detail="Invalid or expired link")
 
-    # Mark as used (single-use)
-    await mark_magic_link_used(token_hash)
+    # Atomically claim the link. If a concurrent request already claimed it,
+    # this returns False and we refuse to hand out the cards list.
+    claimed = await mark_magic_link_used_if_unused(token_hash)
+    if not claimed:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
 
     # Get pending cards for this email
     cards = await get_pending_cards_by_email(link.email)

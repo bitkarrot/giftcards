@@ -1,7 +1,21 @@
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field, validator
+
+# Allowlists for filesystem-interpolated design fields (H-1: path traversal defense)
+ALLOWED_FONTS = {"DejaVuSans", "DejaVuSerif", "DejaVuSansMono"}
+ALLOWED_TEMPLATES = {"portrait", "landscape"}
+ALLOWED_TEXT_ALIGN = {"left", "center", "right"}
+_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _normalize_email(v: Optional[str]) -> Optional[str]:
+    """Normalize email to lowercase, stripped. None passes through."""
+    if v is None:
+        return None
+    return v.strip().lower()
 
 
 class DesignConfig(BaseModel):
@@ -17,6 +31,51 @@ class DesignConfig(BaseModel):
     font_size: int = 24
     font_color: str = "#000000"
     text_align: str = "left"
+
+    @validator("template_name")
+    def _validate_template_name(cls, v):
+        # H-1: prevent path traversal via template_name (interpolated into filesystem path)
+        if v not in ALLOWED_TEMPLATES:
+            raise ValueError(
+                f"Invalid template_name; must be one of {sorted(ALLOWED_TEMPLATES)}"
+            )
+        return v
+
+    @validator("font_family")
+    def _validate_font_family(cls, v):
+        # H-1: prevent path traversal via font_family (interpolated into filesystem path)
+        if v not in ALLOWED_FONTS:
+            raise ValueError(
+                f"Invalid font_family; must be one of {sorted(ALLOWED_FONTS)}"
+            )
+        return v
+
+    @validator("font_color")
+    def _validate_font_color(cls, v):
+        # M-6: validate hex color so the public render endpoint cannot 500 on junk
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("font_color must be a #RRGGBB hex color")
+        return v
+
+    @validator("text_align")
+    def _validate_text_align(cls, v):
+        if v not in ALLOWED_TEXT_ALIGN:
+            raise ValueError(
+                f"Invalid text_align; must be one of {sorted(ALLOWED_TEXT_ALIGN)}"
+            )
+        return v
+
+    @validator("qr_x_frac", "qr_y_frac", "text_x_frac", "text_y_frac")
+    def _validate_frac(cls, v):
+        if v < 0.0 or v > 1.0:
+            raise ValueError("fraction coordinates must be between 0.0 and 1.0")
+        return v
+
+    @validator("qr_size")
+    def _validate_qr_size(cls, v):
+        if v < 150:
+            raise ValueError("qr_size must be >= 150 (minimum scannable size)")
+        return v
 
 
 class MagicLink(BaseModel):
@@ -34,6 +93,11 @@ class ClaimRequest(BaseModel):
     """Request body for claim endpoint."""
     email: str
 
+    @validator("email")
+    def _normalize_email(cls, v):
+        # M-1: normalize to lowercase so rate limit / lookup cannot be bypassed by case
+        return _normalize_email(v) or ""
+
 
 class DeliverRequest(BaseModel):
     """Request body for email delivery endpoint."""
@@ -42,6 +106,11 @@ class DeliverRequest(BaseModel):
     subject: Optional[str] = None
     body: Optional[str] = None
     template: Optional[str] = None
+
+    @validator("recipient_email")
+    def _normalize_recipient_email(cls, v):
+        # M-1: normalize stored recipient email to lowercase for consistent lookup
+        return _normalize_email(v) or ""
 
 
 class CreateGiftCard(BaseModel):
@@ -58,6 +127,11 @@ class CreateGiftCard(BaseModel):
         if v <= 0:
             raise ValueError("Amount must be greater than 0")
         return v
+
+    @validator("recipient_email")
+    def _normalize_recipient_email(cls, v):
+        # M-1: normalize stored recipient email to lowercase for consistent lookup
+        return _normalize_email(v)
 
     @validator("expires_at", pre=True)
     def parse_expires_at(cls, v):

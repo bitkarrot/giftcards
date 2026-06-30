@@ -266,9 +266,14 @@ def test_create_gift_card_design_none_backward_compat():
     assert card.design is None
 
 
-def test_design_config_accepts_sub_minimum_qr_size():
-    """DesignConfig accepts qr_size below minimum at model level (clamping in renderer)."""
+def test_design_config_rejects_sub_minimum_qr_size():
+    """DesignConfig rejects qr_size below 150 at model level (H-1/D-03 defense in depth).
+
+    The 150px minimum scannable size is a locked decision (CONTEXT.md D-03).
+    The model validator enforces it in addition to the renderer's max(150, ...) clamp.
+    """
+    import pytest
     from giftcards.models import DesignConfig
 
-    d = DesignConfig(qr_size=100)
-    assert d.qr_size == 100
+    with pytest.raises(Exception):
+        DesignConfig(qr_size=100)

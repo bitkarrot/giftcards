@@ -232,3 +232,22 @@ async def mark_magic_link_used(token_hash: str) -> None:
         """,
         {"hash": token_hash, "now": time.time()},
     )
+
+
+async def mark_magic_link_used_if_unused(token_hash: str) -> bool:
+    """Atomically mark a magic link as used only if it is currently unused.
+
+    H-2: prevents the single-use TOCTOU race where two concurrent requests
+    both pass the `used_at IS NULL` check before either marks it used.
+    Returns True if this call claimed the link (rowcount == 1), False if it
+    was already used (or does not exist).
+    """
+    result = await db.execute(
+        f"""
+        UPDATE giftcards.magic_links
+        SET used_at = {db.timestamp_placeholder('now')}
+        WHERE token_hash = :hash AND used_at IS NULL
+        """,
+        {"hash": token_hash, "now": time.time()},
+    )
+    return result.rowcount == 1
