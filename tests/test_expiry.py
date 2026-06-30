@@ -13,7 +13,7 @@ from giftcards.crud import (
     get_expired_active_cards,
     mark_card_expired,
 )
-from giftcards.migrations import m001_initial, m002_add_raw_token
+from giftcards.migrations import m001_initial, m002_add_raw_token, m003_branded_delivery
 from giftcards.models import GiftCard
 from giftcards.services import generate_token, reclaim_card_sats
 from giftcards.tasks import _expire_gift_cards
@@ -24,6 +24,7 @@ async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
     await m002_add_raw_token(db)
+    await m003_branded_delivery(db)
 
 
 async def _make_card(

@@ -15,7 +15,7 @@ from giftcards.crud import (
     mark_redeeming,
     reset_card_to_active,
 )
-from giftcards.migrations import m001_initial, m002_add_raw_token
+from giftcards.migrations import m001_initial, m002_add_raw_token, m003_branded_delivery
 from giftcards.models import GiftCard
 from giftcards.services import generate_token, pay_and_complete
 from giftcards.views_api import lnurl_callback
@@ -25,6 +25,7 @@ async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
     await m002_add_raw_token(db)
+    await m003_branded_delivery(db)
 
 
 async def _make_card(status="active") -> GiftCard:

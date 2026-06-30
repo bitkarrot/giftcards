@@ -4,12 +4,54 @@ from typing import Optional
 from pydantic import BaseModel, Field, validator
 
 
+class DesignConfig(BaseModel):
+    """Design configuration for branded card image rendering."""
+    template_asset_id: Optional[str] = None
+    template_name: str = "portrait"
+    qr_x_frac: float = 0.1
+    qr_y_frac: float = 0.7
+    qr_size: int = 200
+    text_x_frac: float = 0.1
+    text_y_frac: float = 0.1
+    font_family: str = "DejaVuSans"
+    font_size: int = 24
+    font_color: str = "#000000"
+    text_align: str = "left"
+
+
+class MagicLink(BaseModel):
+    """Magic link for email verification flow."""
+    id: str
+    token_hash: str
+    email: str
+    wallet: str
+    created_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+
+
+class ClaimRequest(BaseModel):
+    """Request body for claim endpoint."""
+    email: str
+
+
+class DeliverRequest(BaseModel):
+    """Request body for email delivery endpoint."""
+    recipient_email: str
+    email_mode: str = "custom"
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    template: Optional[str] = None
+
+
 class CreateGiftCard(BaseModel):
     amount: int = Field(..., gt=0, description="Amount in sats")
     recipient_name: Optional[str] = None
     sender_name: Optional[str] = None
     message: Optional[str] = None
     expires_at: Optional[datetime] = None
+    recipient_email: Optional[str] = None
+    design: Optional[DesignConfig] = None
 
     @validator("amount")
     def amount_must_be_positive(cls, v):
@@ -53,6 +95,15 @@ class GiftCard(BaseModel):
     created_at: datetime
     redeemed_at: Optional[datetime]
     expired_at: Optional[datetime]
+    template_asset_id: Optional[str] = None
+    template_name: Optional[str] = None
+    qr_config: Optional[str] = None
+    text_config: Optional[str] = None
+    recipient_email: Optional[str] = None
+    email_status: str = "not_sent"
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+    email_template: Optional[str] = None
 
 
 class GiftCardSummary(BaseModel):
@@ -67,6 +118,8 @@ class GiftCardSummary(BaseModel):
     redeemed_at: Optional[datetime]
     expired_at: Optional[datetime]
     redemption_url: Optional[str] = None
+    recipient_email: Optional[str] = None
+    email_status: Optional[str] = None
 
 
 class PublicGiftCard(BaseModel):
@@ -77,6 +130,7 @@ class PublicGiftCard(BaseModel):
     message: Optional[str]
     expires_at: Optional[datetime]
     expired_at: Optional[datetime]
+    has_design: bool = False
 
 
 class CreateGiftCardResponse(BaseModel):

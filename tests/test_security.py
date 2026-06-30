@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from giftcards.crud import create_card, db, get_cards_by_wallet
-from giftcards.migrations import m001_initial, m002_add_raw_token
+from giftcards.migrations import m001_initial, m002_add_raw_token, m003_branded_delivery
 from giftcards.models import GiftCard
 from giftcards.services import generate_token
 from giftcards.views_api import api_get_cards, api_get_public_card
@@ -15,6 +15,7 @@ async def _reset_table():
     await db.execute("DROP TABLE IF EXISTS giftcards.cards")
     await m001_initial(db)
     await m002_add_raw_token(db)
+    await m003_branded_delivery(db)
 
 
 async def _make_card(
