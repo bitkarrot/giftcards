@@ -1,4 +1,4 @@
-window.PageGiftCardsClaim = {
+window.PageGiftCardsClaim = window.PageGiftCardsClaimVerify = {
   template: '#page-giftcards-claim',
   data() {
     return {
