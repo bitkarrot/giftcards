@@ -160,6 +160,43 @@
                           >
                             Download PNG
                           </q-btn>
+                          <q-btn
+                            unelevated
+                            dense
+                            size="sm"
+                            icon="info"
+                            color="primary"
+                            @click="openDetailDialog(props.row)"
+                            aria-label="View full details"
+                          >
+                            View Full Details
+                          </q-btn>
+                          <q-btn
+                            unelevated
+                            dense
+                            size="sm"
+                            icon="edit"
+                            :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
+                            @click="openEditDialog(props.row)"
+                            :disable="props.row.status === 'redeemed'"
+                            aria-label="Edit gift card"
+                          >
+                            Edit
+                            <q-tooltip v-if="props.row.status === 'redeemed'">Redeemed cards cannot be edited.</q-tooltip>
+                          </q-btn>
+                          <q-btn
+                            unelevated
+                            dense
+                            size="sm"
+                            color="negative"
+                            icon="delete"
+                            @click="openDeleteDialog(props.row)"
+                            :disable="props.row.status === 'redeemed'"
+                            aria-label="Delete gift card"
+                          >
+                            Delete
+                            <q-tooltip v-if="props.row.status === 'redeemed'">Redeemed cards cannot be deleted.</q-tooltip>
+                          </q-btn>
                         </div>
                       </div>
                     </div>
@@ -823,10 +860,240 @@
                 </div>
               </q-tab-panel>
 
-              <!-- CSV Upload Tab (placeholder — Plan 02) -->
+              <!-- CSV Upload Tab -->
               <q-tab-panel name="csv">
-                <div class="text-body2 text-grey">
-                  CSV upload available in next update.
+                <div class="q-gutter-md">
+                  <q-select
+                    filled
+                    dense
+                    emit-value
+                    v-model="bulkDialog.sameData.wallet"
+                    :options="g.user.walletOptions"
+                    label="Wallet"
+                  ></q-select>
+
+                  <q-file
+                    filled
+                    dense
+                    accept=".csv"
+                    v-model="bulkDialog.csvFile"
+                    @update:model-value="onCsvFileSelected"
+                    label="CSV File"
+                    hint="Upload a CSV with recipient data. Max 500 rows."
+                    :loading="bulkDialog.csvParsing"
+                  ></q-file>
+
+                  <q-btn
+                    flat
+                    dense
+                    color="grey"
+                    icon="download"
+                    label="Download Template"
+                    @click="downloadCsvTemplate"
+                  ></q-btn>
+                  <div class="text-caption text-grey">
+                    Required: recipient_name, amount_sats. Optional: recipient_email, nostr_npub, sender_name, message.
+                  </div>
+
+                  <div v-if="bulkDialog.csvRows.length > 0 || bulkDialog.csvErrors > 0">
+                    <q-banner
+                      class="q-mb-md"
+                      :color="bulkDialog.csvErrors === 0 ? 'positive' : 'warning'"
+                      icon="check_circle"
+                      v-if="bulkDialog.csvErrors === 0"
+                    >
+                      {{ bulkDialog.csvRows.length }} valid rows ready to create.
+                    </q-banner>
+                    <q-banner
+                      class="q-mb-md"
+                      color="warning"
+                      icon="warning"
+                      v-else
+                    >
+                      {{ bulkDialog.csvRows.length }} valid, {{ bulkDialog.csvErrors }} errors. Fix all errors in your CSV and re-upload before creating.
+                    </q-banner>
+
+                    <q-table
+                      dense
+                      flat
+                      :rows="csvValidationTableRows"
+                      :columns="csvValidationColumns"
+                      row-key="rowIndex"
+                      :pagination="{rowsPerPage: 50}"
+                    >
+                      <template v-slot:body="props">
+                        <q-tr :props="props" :class="props.row.valid ? '' : 'bg-red-1'">
+                          <q-td key="rowIndex" :props="props">{{ props.row.rowIndex }}</q-td>
+                          <q-td key="status" :props="props">
+                            <q-icon
+                              :name="props.row.valid ? 'check_circle' : 'error'"
+                              :color="props.row.valid ? 'positive' : 'negative'"
+                              size="20px"
+                            ></q-icon>
+                          </q-td>
+                          <q-td key="recipient_name" :props="props">{{ props.row.recipient_name }}</q-td>
+                          <q-td key="amount_sats" :props="props">{{ props.row.amount_sats }} sats</q-td>
+                          <q-td key="recipient_email" :props="props">{{ props.row.recipient_email || '—' }}</q-td>
+                          <q-td key="nostr_npub" :props="props">{{ props.row.nostr_npub || '—' }}</q-td>
+                          <q-td key="errors" :props="props">
+                            <span v-if="props.row.errors && props.row.errors.length > 0" class="text-caption text-negative">
+                              {{ props.row.errors.join('; ') }}
+                            </span>
+                            <span v-else>—</span>
+                          </q-td>
+                        </q-tr>
+                      </template>
+                    </q-table>
+                  </div>
+
+                  <q-banner
+                    v-if="bulkDialog.csvRows.length > 500"
+                    color="negative"
+                    icon="error"
+                    class="q-mt-md"
+                  >
+                    CSV has {{ bulkDialog.csvRows.length }} rows. Maximum is 500. Remove excess rows and re-upload.
+                  </q-banner>
+
+                  <q-separator class="q-my-md"></q-separator>
+                  <h6 class="text-subtitle1 q-my-none">Card Design</h6>
+
+                  <q-select
+                    filled
+                    dense
+                    emit-value
+                    map-options
+                    v-model="bulkDialog.csvData.designMode"
+                    :options="[
+                      {label: 'No design (bare QR)', value: 'none'},
+                      {label: 'One design for all rows', value: 'shared'},
+                      {label: 'Per-row design columns', value: 'per_row'}
+                    ]"
+                    label="Design Mode"
+                  ></q-select>
+
+                  <div v-if="bulkDialog.csvData.designMode === 'shared'">
+                    <div class="row q-col-gutter-md">
+                      <div class="col-12 col-md-6">
+                        <q-select
+                          filled
+                          dense
+                          emit-value
+                          map-options
+                          v-model="selectedTemplate"
+                          :options="templateOptions"
+                          label="Template"
+                          @update:model-value="onTemplateChange"
+                        ></q-select>
+                      </div>
+                      <div class="col-12 col-md-6" v-if="selectedTemplate === 'custom'">
+                        <q-btn
+                          unelevated
+                          color="primary"
+                          icon="upload"
+                          label="Upload Custom Template"
+                          :loading="isUploadingTemplate"
+                          @click="triggerTemplateUpload"
+                        ></q-btn>
+                      </div>
+                    </div>
+
+                    <div class="row q-col-gutter-md q-mt-sm">
+                      <div class="col-12 col-md-7">
+                        <div
+                          class="card-preview"
+                          :style="{width: previewWidth + 'px', height: previewHeight + 'px'}"
+                        >
+                          <img :src="templateUrl" class="template-bg" />
+                          <div
+                            class="draggable-qr"
+                            :style="{left: qrX + 'px', top: qrY + 'px', width: previewQrSize + 'px', height: previewQrSize + 'px'}"
+                            @pointerdown="startDrag($event, 'qr')"
+                            @pointermove="onDrag"
+                            @pointerup="endDrag"
+                          >
+                            <img
+                              src="/giftcards/static/image/qr_placeholder.png"
+                              style="width: 100%; height: 100%; object-fit: contain;"
+                              @error="$event.target.style.display='none'"
+                            />
+                            <div
+                              class="resize-handle"
+                              @pointerdown.stop="startResize"
+                              @pointermove="onResize"
+                              @pointerup="endResize"
+                            ></div>
+                          </div>
+                          <div
+                            v-if="anyTextShown"
+                            class="draggable-text"
+                            :style="{left: textX + 'px', top: textY + 'px'}"
+                            @pointerdown="startDrag($event, 'text')"
+                            @pointermove="onDrag"
+                            @pointerup="endDrag"
+                          >
+                            <div :style="previewTextStyle">
+                              <div v-if="showAmount">1000 sats</div>
+                              <div v-if="showRecipient">For: Recipient</div>
+                              <div v-if="showMessage">Your message</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="col-12 col-md-5">
+                        <div class="q-gutter-sm">
+                          <div class="text-caption text-weight-medium">Show on card</div>
+                          <q-toggle v-model="showAmount" label="Amount"></q-toggle>
+                          <q-toggle v-model="showRecipient" label="Recipient name"></q-toggle>
+                          <q-toggle v-model="showMessage" label="Message"></q-toggle>
+                          <q-select
+                            v-if="anyTextShown"
+                            filled
+                            dense
+                            emit-value
+                            map-options
+                            v-model="selectedFont"
+                            :options="fontOptions"
+                            label="Font"
+                          ></q-select>
+                          <div v-if="anyTextShown" class="text-caption">Font Size: {{ fontSize }}px</div>
+                          <q-slider
+                            v-if="anyTextShown"
+                            v-model="fontSize"
+                            :min="12"
+                            :max="72"
+                            :step="1"
+                            label
+                          ></q-slider>
+                          <q-input
+                            v-if="anyTextShown"
+                            filled
+                            dense
+                            v-model="fontColor"
+                            type="color"
+                            label="Font Color"
+                          ></q-input>
+                          <div v-if="anyTextShown" class="text-caption">Alignment</div>
+                          <q-btn-toggle
+                            v-if="anyTextShown"
+                            v-model="textAlign"
+                            unelevated
+                            :options="[
+                              {label: 'Left', value: 'left'},
+                              {label: 'Center', value: 'center'},
+                              {label: 'Right', value: 'right'}
+                            ]"
+                          ></q-btn-toggle>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="bulkDialog.csvData.designMode === 'per_row'">
+                    <q-banner color="info" rounded icon="info">
+                      CSV must include design columns: template_name, qr_x, qr_y, qr_size, text_x, text_y, font_size, font_color, text_align. See template for column names.
+                    </q-banner>
+                  </div>
                 </div>
               </q-tab-panel>
             </q-tab-panels>
@@ -850,6 +1117,252 @@
             </div>
           </div>
         </q-form>
+      </q-card>
+    </q-dialog>
+
+    <!-- Card Detail Dialog -->
+    <q-dialog v-model="detailDialog.show" position="top">
+      <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+        <div class="q-gutter-md" v-if="detailDialog.card">
+          <div class="row items-center no-wrap">
+            <div class="col">
+              <h6 class="text-subtitle1 q-my-none">Card Details</h6>
+            </div>
+            <div class="col-auto">
+              <q-badge
+                :color="getStatusColor(detailDialog.card.status)"
+                :label="getStatusText(detailDialog.card.status)"
+              ></q-badge>
+            </div>
+          </div>
+
+          <q-separator class="q-my-md"></q-separator>
+
+          <div class="row q-col-gutter-md">
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Amount</div>
+              <div class="text-body2">{{ detailDialog.card.amount }} sats</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Recipient</div>
+              <div class="text-body2">{{ detailDialog.card.recipient_name || 'Anonymous' }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Sender</div>
+              <div class="text-body2">{{ detailDialog.card.sender_name || 'Anonymous' }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Email</div>
+              <div class="text-body2">{{ detailDialog.card.recipient_email || '—' }}</div>
+            </div>
+            <div class="col-12">
+              <div class="text-caption">Message</div>
+              <div class="text-body2">{{ detailDialog.card.message || 'No message' }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Created</div>
+              <div class="text-body2">{{ formatDate(detailDialog.card.created_at) }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Expires</div>
+              <div class="text-body2">{{ detailDialog.card.expires_at ? formatDate(detailDialog.card.expires_at) : 'Never' }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Redeemed</div>
+              <div class="text-body2">{{ detailDialog.card.redeemed_at ? formatDate(detailDialog.card.redeemed_at) : '—' }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-caption">Delivery Status</div>
+              <q-badge
+                :color="getDeliveryStatusColor(detailDialog.card.email_status || 'not_sent')"
+                :label="getDeliveryStatusText(detailDialog.card.email_status || 'not_sent')"
+              ></q-badge>
+            </div>
+          </div>
+
+          <q-separator class="q-my-md"></q-separator>
+
+          <div class="text-caption">Redemption Link</div>
+          <q-input
+            readonly
+            dense
+            outlined
+            :model-value="detailDialog.card.redemption_url"
+            :input-style="{ color: $q.dark.isActive ? '#e0e0e0' : '#333' }"
+          >
+            <template v-slot:append>
+              <q-btn
+                flat
+                dense
+                icon="content_copy"
+                @click="copyToClipboard(detailDialog.card.redemption_url)"
+                aria-label="Copy link to clipboard"
+              ></q-btn>
+            </template>
+          </q-input>
+
+          <div class="row q-mt-lg">
+            <q-btn
+              unelevated
+              dense
+              color="primary"
+              icon="edit"
+              @click="openEditDialog(detailDialog.card); detailDialog.show = false"
+              :disable="detailDialog.card.status === 'redeemed'"
+            >
+              Edit Card
+            </q-btn>
+            <q-btn
+              unelevated
+              dense
+              color="negative"
+              icon="delete"
+              @click="openDeleteDialog(detailDialog.card); detailDialog.show = false"
+              :disable="detailDialog.card.status === 'redeemed'"
+              class="q-ml-sm"
+            >
+              Delete Card
+            </q-btn>
+            <q-btn
+              v-close-popup
+              flat
+              color="grey"
+              class="q-ml-auto"
+              label="Close"
+            ></q-btn>
+          </div>
+        </div>
+      </q-card>
+    </q-dialog>
+
+    <!-- Card Edit Dialog -->
+    <q-dialog v-model="editDialog.show" position="top">
+      <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+        <q-form @submit="saveCardEdit">
+          <div class="q-gutter-md" v-if="editDialog.card">
+            <h6 class="text-subtitle1 q-my-none">Edit Gift Card</h6>
+            <q-badge
+              :color="getStatusColor(editDialog.card.status)"
+              :label="getStatusText(editDialog.card.status)"
+            ></q-badge>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="editDialog.data.recipient_name"
+              type="text"
+              label="Recipient Name"
+            ></q-input>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="editDialog.data.sender_name"
+              type="text"
+              label="Your Name"
+            ></q-input>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="editDialog.data.message"
+              type="textarea"
+              label="Personal Message"
+            ></q-input>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="editDialog.data.recipient_email"
+              type="email"
+              label="Recipient Email"
+              :rules="[val => !val || isValidEmail(val) || 'Enter a valid email address']"
+            ></q-input>
+
+            <q-input
+              filled
+              dense
+              type="number"
+              readonly
+              :model-value="editDialog.card.amount"
+              label="Amount (sats)"
+              hint="Amount cannot be changed directly."
+            ></q-input>
+
+            <q-banner color="info" rounded icon="info">
+              To change the amount, cancel this card and create a new one with the desired amount.
+            </q-banner>
+
+            <div class="row q-mt-lg">
+              <q-btn
+                unelevated
+                color="primary"
+                type="submit"
+                label="Save Changes"
+                :loading="editDialog.loading"
+              ></q-btn>
+              <q-btn
+                v-close-popup
+                flat
+                color="grey"
+                class="q-ml-auto"
+                label="Cancel"
+              ></q-btn>
+            </div>
+          </div>
+        </q-form>
+      </q-card>
+    </q-dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <q-dialog v-model="deleteDialog.show" persistent>
+      <q-card class="q-pa-lg" style="min-width: 400px; max-width: 500px">
+        <div class="q-gutter-md" v-if="deleteDialog.card">
+          <div class="text-center">
+            <q-icon name="warning" color="negative" size="48px"></q-icon>
+          </div>
+
+          <h6 class="text-subtitle1 q-my-none text-center">Delete Gift Card?</h6>
+
+          <p class="text-body2 text-center">
+            Are you sure? This will reclaim {{ deleteDialog.card.amount }} sats to your wallet and permanently delete this card.
+          </p>
+
+          <q-banner
+            v-if="deleteDialog.card.status === 'active'"
+            color="warning"
+            rounded
+            icon="warning"
+          >
+            The {{ deleteDialog.card.amount }} sats locked in this card will be returned to your wallet before deletion.
+          </q-banner>
+
+          <q-banner
+            v-if="deleteDialog.card.status === 'expired'"
+            color="info"
+            rounded
+            icon="info"
+          >
+            Sats from this expired card have already been reclaimed. Only the card record will be deleted.
+          </q-banner>
+
+          <div class="row q-mt-lg">
+            <q-btn
+              unelevated
+              color="negative"
+              label="Delete Card"
+              :loading="deleteDialog.loading"
+              @click="confirmDelete"
+            ></q-btn>
+            <q-btn
+              v-close-popup
+              flat
+              color="grey"
+              class="q-ml-auto"
+              label="Keep Card"
+            ></q-btn>
+          </div>
+        </div>
       </q-card>
     </q-dialog>
   </div>

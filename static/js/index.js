@@ -73,9 +73,37 @@ window.PageGiftCards = {
           expires_at: null,
           designMode: 'none'
         },
+        csvData: {
+          designMode: 'none'
+        },
         csvFile: null,
         csvRows: [],
-        csvErrors: 0
+        csvErrors: 0,
+        csvParsing: false,
+        csvErrorRows: []
+      },
+      // Card detail dialog
+      detailDialog: {
+        show: false,
+        card: null
+      },
+      // Card edit dialog
+      editDialog: {
+        show: false,
+        loading: false,
+        card: null,
+        data: {
+          recipient_name: '',
+          sender_name: '',
+          message: '',
+          recipient_email: ''
+        }
+      },
+      // Delete confirmation dialog
+      deleteDialog: {
+        show: false,
+        loading: false,
+        card: null
       }
     }
   },
@@ -172,9 +200,18 @@ window.PageGiftCards = {
       }
     },
     bulkSubmitLabel() {
+      if (this.bulkDialog.activeTab === 'csv') {
+        const validCount = this.bulkDialog.csvRows.length
+        return 'Create ' + validCount + ' Cards'
+      }
       return 'Create ' + (this.bulkDialog.sameData.count || 0) + ' Cards'
     },
     bulkSubmitDisabled() {
+      if (this.bulkDialog.activeTab === 'csv') {
+        return this.bulkDialog.csvErrors > 0 ||
+               this.bulkDialog.csvRows.length === 0 ||
+               this.bulkDialog.csvRows.length > 500
+      }
       const count = this.bulkDialog.sameData.count
       const amount = this.bulkDialog.sameData.amount
       return count <= 0 || amount <= 0 || (count * amount > this.walletBalance)
@@ -183,6 +220,40 @@ window.PageGiftCards = {
       const count = this.bulkDialog.sameData.count || 0
       const amount = this.bulkDialog.sameData.amount || 0
       return count * amount > this.walletBalance
+    },
+    csvValidationColumns() {
+      return [
+        {name: 'rowIndex', align: 'left', label: '#', field: 'rowIndex', sortable: false},
+        {name: 'status', align: 'left', label: 'Status', field: 'valid', sortable: false},
+        {name: 'recipient_name', align: 'left', label: 'Recipient', field: 'recipient_name', sortable: false},
+        {name: 'amount_sats', align: 'right', label: 'Amount', field: 'amount_sats', sortable: false},
+        {name: 'recipient_email', align: 'left', label: 'Email', field: 'recipient_email', sortable: false},
+        {name: 'nostr_npub', align: 'left', label: 'Npub', field: 'nostr_npub', sortable: false},
+        {name: 'errors', align: 'left', label: 'Errors', field: 'errors', sortable: false}
+      ]
+    },
+    csvValidationTableRows() {
+      // Combine valid rows and error rows into a single table data source
+      const validRows = this.bulkDialog.csvRows.map(r => ({
+        rowIndex: r.row_num,
+        valid: true,
+        recipient_name: r.recipient_name,
+        amount_sats: r.amount_sats,
+        recipient_email: r.recipient_email,
+        nostr_npub: r.nostr_npub,
+        errors: []
+      }))
+      const errorRows = this.bulkDialog.csvErrorRows.map(e => ({
+        rowIndex: e.row_num,
+        valid: false,
+        recipient_name: '',
+        amount_sats: '',
+        recipient_email: '',
+        nostr_npub: '',
+        errors: [e.field + ': ' + e.message]
+      }))
+      // Merge and sort by row index
+      return [...validRows, ...errorRows].sort((a, b) => a.rowIndex - b.rowIndex)
     }
   },
   mounted() {
@@ -666,6 +737,8 @@ window.PageGiftCards = {
       this.bulkDialog.csvFile = null
       this.bulkDialog.csvRows = []
       this.bulkDialog.csvErrors = 0
+      this.bulkDialog.csvErrorRows = []
+      this.bulkDialog.csvData = {designMode: 'none'}
       // Reset card designer to defaults
       this.selectedTemplate = 'portrait'
       this.templateAssetId = null
@@ -692,51 +765,205 @@ window.PageGiftCards = {
       this.bulkDialog.loading = true
       try {
         const wallet = this.g.user.wallets.find(w => w.id === this.bulkDialog.sameData.wallet)
-        // Build design config from card designer state (if designMode === 'shared')
-        let design = null
-        if (this.bulkDialog.sameData.designMode === 'shared') {
-          design = {
-            template_asset_id: this.templateAssetId,
-            template_name: this.selectedTemplate,
-            qr_x_frac: this.qrX / this.previewWidth,
-            qr_y_frac: this.qrY / this.previewHeight,
-            qr_size: this.qrSize,
-            text_x_frac: this.textX / this.previewWidth,
-            text_y_frac: this.textY / this.previewHeight,
-            font_family: this.selectedFont,
-            font_size: this.fontSize,
-            font_color: this.fontColor,
-            text_align: this.textAlign,
-            show_amount: this.showAmount,
-            show_recipient: this.showRecipient,
-            show_message: this.showMessage
-          }
-        }
-        const payload = {
-          count: this.bulkDialog.sameData.count,
-          amount: this.bulkDialog.sameData.amount,
-          recipient_name: this.bulkDialog.sameData.recipient_name || null,
-          sender_name: this.bulkDialog.sameData.sender_name || null,
-          message: this.bulkDialog.sameData.message || null,
-          expires_at: this.bulkDialog.sameData.expires_at || null,
-          design: design
-        }
-        await LNbits.api.request(
-          'POST',
-          '/giftcards/api/v1/cards/bulk',
-          wallet.adminkey,
-          payload
-        )
 
-        this.bulkDialog.show = false
-        const count = this.bulkDialog.sameData.count
-        LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
+        if (this.bulkDialog.activeTab === 'csv') {
+          // CSV mode — post validated rows to /cards/bulk
+          let design = null
+          if (this.bulkDialog.csvData.designMode === 'shared') {
+            design = {
+              template_asset_id: this.templateAssetId,
+              template_name: this.selectedTemplate,
+              qr_x_frac: this.qrX / this.previewWidth,
+              qr_y_frac: this.qrY / this.previewHeight,
+              qr_size: this.qrSize,
+              text_x_frac: this.textX / this.previewWidth,
+              text_y_frac: this.textY / this.previewHeight,
+              font_family: this.selectedFont,
+              font_size: this.fontSize,
+              font_color: this.fontColor,
+              text_align: this.textAlign,
+              show_amount: this.showAmount,
+              show_recipient: this.showRecipient,
+              show_message: this.showMessage
+            }
+          }
+          const payload = {
+            rows: this.bulkDialog.csvRows,
+            design_mode: this.bulkDialog.csvData.designMode,
+            design: design
+          }
+          await LNbits.api.request(
+            'POST',
+            '/giftcards/api/v1/cards/bulk',
+            wallet.adminkey,
+            payload
+          )
+          this.bulkDialog.show = false
+          const count = this.bulkDialog.csvRows.length
+          LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
+          this.loadGiftCards()
+          this.loadWalletBalance()
+        } else {
+          // Same-amount mode — existing behavior
+          let design = null
+          if (this.bulkDialog.sameData.designMode === 'shared') {
+            design = {
+              template_asset_id: this.templateAssetId,
+              template_name: this.selectedTemplate,
+              qr_x_frac: this.qrX / this.previewWidth,
+              qr_y_frac: this.qrY / this.previewHeight,
+              qr_size: this.qrSize,
+              text_x_frac: this.textX / this.previewWidth,
+              text_y_frac: this.textY / this.previewHeight,
+              font_family: this.selectedFont,
+              font_size: this.fontSize,
+              font_color: this.fontColor,
+              text_align: this.textAlign,
+              show_amount: this.showAmount,
+              show_recipient: this.showRecipient,
+              show_message: this.showMessage
+            }
+          }
+          const payload = {
+            count: this.bulkDialog.sameData.count,
+            amount: this.bulkDialog.sameData.amount,
+            recipient_name: this.bulkDialog.sameData.recipient_name || null,
+            sender_name: this.bulkDialog.sameData.sender_name || null,
+            message: this.bulkDialog.sameData.message || null,
+            expires_at: this.bulkDialog.sameData.expires_at || null,
+            design: design
+          }
+          await LNbits.api.request(
+            'POST',
+            '/giftcards/api/v1/cards/bulk',
+            wallet.adminkey,
+            payload
+          )
+
+          this.bulkDialog.show = false
+          const count = this.bulkDialog.sameData.count
+          LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
+          this.loadGiftCards()
+          this.loadWalletBalance()
+        }
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.bulkDialog.loading = false
+      }
+    },
+
+    // ----- CSV upload -----
+
+    async onCsvFileSelected(file) {
+      if (!file) return
+      const filename = file.name || ''
+      if (!filename.toLowerCase().endsWith('.csv')) {
+        LNbits.utils.notify('Please select a CSV file.', 'negative')
+        return
+      }
+      this.bulkDialog.csvParsing = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === this.bulkDialog.sameData.wallet) || this.g.user.wallets[0]
+        const formData = new FormData()
+        formData.append('file', file)
+        const response = await LNbits.api.request(
+          'POST',
+          '/giftcards/api/v1/cards/validate-csv',
+          wallet.adminkey,
+          formData
+        )
+        this.bulkDialog.csvRows = response.data.valid_rows || []
+        this.bulkDialog.csvErrorRows = response.data.errors || []
+        this.bulkDialog.csvErrors = response.data.error_count || 0
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+        this.bulkDialog.csvRows = []
+        this.bulkDialog.csvErrorRows = []
+        this.bulkDialog.csvErrors = 0
+      } finally {
+        this.bulkDialog.csvParsing = false
+      }
+    },
+
+    downloadCsvTemplate() {
+      const headers = 'recipient_name,amount_sats,recipient_email,nostr_npub,sender_name,message'
+      const exampleRow = 'Alice,1000,alice@example.com,,Bob,Happy birthday!'
+      const csv = headers + '\n' + exampleRow + '\n'
+      const blob = new Blob([csv], {type: 'text/csv'})
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'giftcards_bulk_template.csv'
+      a.click()
+      window.URL.revokeObjectURL(url)
+    },
+
+    // ----- Card detail / edit / delete dialogs -----
+
+    openDetailDialog(card) {
+      this.detailDialog.card = card
+      this.detailDialog.show = true
+    },
+
+    openEditDialog(card) {
+      this.editDialog.card = card
+      this.editDialog.data = {
+        recipient_name: card.recipient_name || '',
+        sender_name: card.sender_name || '',
+        message: card.message || '',
+        recipient_email: card.recipient_email || ''
+      }
+      this.editDialog.show = true
+    },
+
+    async saveCardEdit() {
+      if (!this.editDialog.card) return
+      this.editDialog.loading = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === this.editDialog.card.wallet) || this.g.user.wallets[0]
+        const url = '/giftcards/api/v1/cards/' + this.editDialog.card.id
+        await LNbits.api.request(
+          'PUT',
+          url,
+          wallet.adminkey,
+          this.editDialog.data
+        )
+        this.editDialog.show = false
+        LNbits.utils.notify('Card updated successfully', 'positive')
+        this.loadGiftCards()
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.editDialog.loading = false
+      }
+    },
+
+    openDeleteDialog(card) {
+      this.deleteDialog.card = card
+      this.deleteDialog.show = true
+    },
+
+    async confirmDelete() {
+      if (!this.deleteDialog.card) return
+      this.deleteDialog.loading = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === this.deleteDialog.card.wallet) || this.g.user.wallets[0]
+        const url = '/giftcards/api/v1/cards/' + this.deleteDialog.card.id
+        const response = await LNbits.api.request(
+          'DELETE',
+          url,
+          wallet.adminkey
+        )
+        this.deleteDialog.show = false
+        const reclaimed = response.data.reclaimed_sats || 0
+        LNbits.utils.notify('Card deleted and ' + reclaimed + ' sats reclaimed', 'positive')
         this.loadGiftCards()
         this.loadWalletBalance()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
-        this.bulkDialog.loading = false
+        this.deleteDialog.loading = false
       }
     }
   }
