@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, validator
 
 # Allowlists for filesystem-interpolated design fields (H-1: path traversal defense)
 ALLOWED_FONTS = {"DejaVuSans", "DejaVuSerif", "DejaVuSansMono"}
-ALLOWED_TEMPLATES = {"portrait", "landscape"}
+ALLOWED_TEMPLATES = {"portrait", "landscape", "custom"}
 ALLOWED_TEXT_ALIGN = {"left", "center", "right"}
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
