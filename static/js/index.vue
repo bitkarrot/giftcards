@@ -303,7 +303,7 @@
                   <img :src="templateUrl" class="template-bg" />
                   <div
                     class="draggable-qr"
-                    :style="{left: qrX + 'px', top: qrY + 'px', width: qrSize + 'px', height: qrSize + 'px'}"
+                    :style="{left: qrX + 'px', top: qrY + 'px', width: previewQrSize + 'px', height: previewQrSize + 'px'}"
                     @pointerdown="startDrag($event, 'qr')"
                     @pointermove="onDrag"
                     @pointerup="endDrag"

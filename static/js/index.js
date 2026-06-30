@@ -39,6 +39,8 @@ window.PageGiftCards = {
       showMessage: true,
       previewWidth: 212,
       previewHeight: 325,
+      actualTemplateWidth: 425,
+      actualTemplateHeight: 650,
       minQrSize: 150,
       dragState: null,
       resizeState: null,
@@ -114,6 +116,16 @@ window.PageGiftCards = {
     },
     anyTextShown() {
       return this.showAmount || this.showRecipient || this.showMessage
+    },
+    previewScale() {
+      if (!this.actualTemplateWidth) return 1
+      return this.previewWidth / this.actualTemplateWidth
+    },
+    previewQrSize() {
+      // qrSize is tracked in ACTUAL card pixels; the preview renders it
+      // scaled down by previewScale so the on-screen QR matches what the
+      // server will actually render on the real card.
+      return Math.round(this.qrSize * this.previewScale)
     },
     emailModeOptions() {
       return [
@@ -215,6 +227,8 @@ window.PageGiftCards = {
       this.showMessage = true
       this.previewWidth = 212
       this.previewHeight = 325
+      this.actualTemplateWidth = 425
+      this.actualTemplateHeight = 650
       this.dragState = null
       this.resizeState = null
     },
@@ -406,8 +420,9 @@ window.PageGiftCards = {
       const newX = this.dragState.origX + dx
       const newY = this.dragState.origY + dy
       if (this.dragState.target === 'qr') {
-        this.qrX = Math.max(0, Math.min(newX, this.previewWidth - this.qrSize))
-        this.qrY = Math.max(0, Math.min(newY, this.previewHeight - this.qrSize))
+        const pqrs = this.previewQrSize
+        this.qrX = Math.max(0, Math.min(newX, this.previewWidth - pqrs))
+        this.qrY = Math.max(0, Math.min(newY, this.previewHeight - pqrs))
       } else {
         this.textX = Math.max(0, Math.min(newX, this.previewWidth))
         this.textY = Math.max(0, Math.min(newY, this.previewHeight))
@@ -432,8 +447,15 @@ window.PageGiftCards = {
     onResize(event) {
       if (!this.resizeState) return
       const dx = event.clientX - this.resizeState.startX
-      const newSize = Math.max(this.minQrSize, this.resizeState.origSize + dx)
-      this.qrSize = Math.min(newSize, this.previewWidth - this.qrX)
+      // dx is in preview pixels; convert to actual card pixels so qrSize
+      // stays in the same units the server renderer uses.
+      const scale = this.previewScale || 1
+      const deltaActual = dx / scale
+      const newSize = Math.max(this.minQrSize, this.resizeState.origSize + deltaActual)
+      // Clamp so the QR doesn't overflow the preview's right edge.
+      const maxPreviewSize = this.previewWidth - this.qrX
+      const maxActualSize = maxPreviewSize / scale
+      this.qrSize = Math.min(newSize, maxActualSize)
     },
 
     endResize() {
@@ -444,17 +466,27 @@ window.PageGiftCards = {
 
     onTemplateChange(value) {
       if (value === 'portrait') {
+        this.actualTemplateWidth = 425
+        this.actualTemplateHeight = 650
         this.previewWidth = 212
         this.previewHeight = 325
         this.templateUrl = '/giftcards/static/image/template_portrait.png'
         this.templateAssetId = null
       } else if (value === 'landscape') {
+        this.actualTemplateWidth = 1050
+        this.actualTemplateHeight = 600
         this.previewWidth = 262
         this.previewHeight = 150
         this.templateUrl = '/giftcards/static/image/template_landscape.png'
         this.templateAssetId = null
       }
-      // 'custom' — preview set after upload
+      // Reset QR/text positions to default fractions so they're on-card
+      // after a dimension change (old pixel positions may be off-screen).
+      this.qrX = Math.round(0.1 * this.previewWidth)
+      this.qrY = Math.round(0.7 * this.previewHeight)
+      this.textX = Math.round(0.1 * this.previewWidth)
+      this.textY = Math.round(0.1 * this.previewHeight)
+      // 'custom' — actual + preview dimensions set in handleTemplateSelected
     },
 
     triggerTemplateUpload() {
@@ -467,8 +499,9 @@ window.PageGiftCards = {
       if (!file) return
 
       // D-03: validate image dimensions (max 1500x2000px) client-side
+      let dims
       try {
-        const dims = await this._getImageDimensions(file)
+        dims = await this._getImageDimensions(file)
         if (dims.width > 1500 || dims.height > 2000) {
           LNbits.utils.notify(
             'Template image too large. Maximum dimensions are 1500x2000px.',
@@ -486,6 +519,18 @@ window.PageGiftCards = {
         const assetId = await this.uploadAssetFile(file)
         this.templateAssetId = assetId
         this.templateUrl = `/api/v1/assets/${assetId}/data`
+        // Track actual dimensions and fit a preview that preserves aspect ratio
+        // within a ~325px max dimension so the QR scale stays accurate.
+        this.actualTemplateWidth = dims.width
+        this.actualTemplateHeight = dims.height
+        const maxPreview = 325
+        if (dims.width >= dims.height) {
+          this.previewWidth = maxPreview
+          this.previewHeight = Math.round(maxPreview * dims.height / dims.width)
+        } else {
+          this.previewHeight = maxPreview
+          this.previewWidth = Math.round(maxPreview * dims.width / dims.height)
+        }
         LNbits.utils.notify('Custom template uploaded', 'positive')
       } catch (error) {
         LNbits.utils.notifyApiError(error)
