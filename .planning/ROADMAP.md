@@ -56,7 +56,12 @@ Plans:
   3. Issuer can trigger nostr delivery; the recipient's nostr npub receives a DM containing the redemption link.
   4. Issuer can download a printable PNG image of the gift card for manual distribution.
 
-**Plans**: TBD
+**Plans**: 1/3 plans executed
+
+- [x] 02-01-PLAN.md
+- [ ] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
+
 **UI hint**: yes
 
 ### Phase 3: Scale & Manage
@@ -83,5 +88,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop | 3/3 | Complete   | 2026-06-29 |
-| 2. Branded Delivery | 0/TBD | Not started | - |
+| 2. Branded Delivery | 1/3 | In Progress|  |
 | 3. Scale & Manage | 0/TBD | Not started | - |
