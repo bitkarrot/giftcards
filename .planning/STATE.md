@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
+current_phase: 1
+current_phase_name: Core Loop
 status: complete
-stopped_at: Completed 01-03-PLAN.md (post-session hardening applied)
-last_updated: "2026-06-29T22:20:00.000Z"
+stopped_at: Phase 2 context gathered
+last_updated: "2026-06-30T01:22:51.459Z"
 last_activity: 2026-06-29
-last_activity_desc: Post-session hardening: removed per-card wallets, fixed LNURL/proxy/frontend bugs, added icon
+last_activity_desc: "Post-session: architecture refactor (no per-card wallets), LNURL/proxy/frontend fixes, icon added"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 3
   completed_plans: 3
-  percent: 100
-current_phase: 1
-current_phase_name: Core Loop
+  percent: 33
 ---
 
 # Project State
@@ -100,9 +100,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-29T22:20:00.000Z
-Stopped at: Post-session hardening complete; Phase 1 ready for Phase 2
-Resume file: None
+Last session: 2026-06-30T01:22:51.453Z
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-branded-delivery/02-CONTEXT.md
 Next: Phase 2 — Branded Delivery (templates, email, nostr, printable download)
 
 ### Post-Session Changes (2026-06-29, outside GSD workflow)
