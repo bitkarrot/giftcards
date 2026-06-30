@@ -31,7 +31,7 @@ async def get_card_by_token_hash(token_hash: str) -> Optional[GiftCard]:
 
 async def get_cards_by_wallet(wallet_id: str) -> list[GiftCardSummary]:
     return await db.fetchall(
-        "SELECT id, amount, status, recipient_name, sender_name, message, expires_at, created_at, redeemed_at, expired_at, redemption_url FROM giftcards.cards WHERE wallet = :wallet",
+        "SELECT id, amount, status, recipient_name, sender_name, message, expires_at, created_at, redeemed_at, expired_at, redemption_url, recipient_email, email_status FROM giftcards.cards WHERE wallet = :wallet",
         {"wallet": wallet_id},
         GiftCardSummary,
     )
@@ -102,4 +102,16 @@ async def get_expired_active_cards() -> list[GiftCard]:
         """,
         {"now": time.time()},
         GiftCard,
+    )
+
+
+async def update_card_email_status(card_id: str, status: str) -> None:
+    """Update the email_status column on a card."""
+    await db.execute(
+        """
+        UPDATE giftcards.cards
+        SET email_status = :status
+        WHERE id = :id
+        """,
+        {"id": card_id, "status": status},
     )

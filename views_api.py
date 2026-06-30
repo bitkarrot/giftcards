@@ -12,50 +12,21 @@ from lnurl import (
     MilliSatoshi,
 )
 from loguru import logger
-import pyqrcode  # type: ignore[import-untyped]
 from PIL import Image, ImageDraw
 
 from .crud import (
     get_card_by_token_hash,
+    get_card,
     mark_redeemed,
     mark_redeeming,
     reset_card_to_active,
     get_cards_by_wallet,
 )
 from .models import CreateGiftCard, GiftCardSummary, PublicGiftCard
-from .services import create_gift_card, pay_and_complete
+from .services import create_gift_card, pay_and_complete, render_card_image, make_qr_png
 
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
 giftcards_lnurl_router = APIRouter(prefix="/api/v1/lnurl")
-
-
-def make_qr_png(data: str, size: int = 235, border: int = 4) -> Image.Image:
-    """Generate a QR code as PNG image."""
-    qr = pyqrcode.create(data)
-    matrix = qr.code
-    modules = len(matrix)
-
-    total_modules = modules + border * 2
-    box_size = max(1, size // total_modules)
-    img_size = total_modules * box_size
-
-    img = Image.new("RGBA", (img_size, img_size), "white")
-    draw = ImageDraw.Draw(img)
-
-    for y, row in enumerate(matrix):
-        for x, cell in enumerate(row):
-            if cell:
-                x0 = (x + border) * box_size
-                y0 = (y + border) * box_size
-                draw.rectangle(
-                    [x0, y0, x0 + box_size - 1, y0 + box_size - 1],
-                    fill="black",
-                )
-
-    if img_size != size:
-        img = img.resize((size, size), Image.Resampling.NEAREST)
-
-    return img
 
 
 @giftcards_api_router.post("")
@@ -229,6 +200,61 @@ async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
         output,
         media_type="image/png",
         headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@giftcards_api_router.get("/{token_hash}/image")
+async def api_card_image(token_hash: str, request: Request) -> StreamingResponse:
+    """Render branded card image on demand (public, no auth).
+
+    Returns a PNG via StreamingResponse with no-cache headers.
+    """
+    card = await get_card_by_token_hash(token_hash)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
+    png_bytes = await render_card_image(card, lnurl_url, scale=1)
+    output = BytesIO(png_bytes)
+
+    return StreamingResponse(
+        output,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@giftcards_api_router.get("/{card_id}/print")
+async def api_card_print(
+    card_id: str,
+    request: Request,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> StreamingResponse:
+    """Render printable 3x-resolution branded card image (authenticated).
+
+    Returns a PNG with Content-Disposition: attachment header.
+    """
+    card = await get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Gift card not found")
+
+    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{card.token_hash}"
+    png_bytes = await render_card_image(card, lnurl_url, scale=3)
+    output = BytesIO(png_bytes)
+
+    return StreamingResponse(
+        output,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'attachment; filename="giftcard_{card_id}.png"',
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",

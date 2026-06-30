@@ -1,16 +1,23 @@
+import asyncio
 import hashlib
+import json
 import secrets
 from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
+import pyqrcode  # type: ignore[import-untyped]
+from lnbits.core.crud.assets import get_public_asset
 from lnbits.core.crud.wallets import get_wallet
 from lnbits.core.models.payments import Payment, PaymentState
 from lnbits.core.services.payments import update_wallet_balance, pay_invoice
 from lnbits.exceptions import PaymentError
 from loguru import logger
+from PIL import Image, ImageDraw, ImageFont
 
 from .crud import create_card, get_card_by_token_hash
-from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary
+from .models import CreateGiftCard, GiftCard, CreateGiftCardResponse, GiftCardSummary, DesignConfig
 
 
 def generate_token() -> tuple[str, str]:
@@ -131,3 +138,179 @@ async def reclaim_card_sats(card: GiftCard) -> None:
         await update_wallet_balance(wallet=issuer_wallet, amount=card.amount)
     except Exception as exc:
         logger.error(f"Reclaim failed for expired card {card.id}: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Branded card image rendering (Phase 2)
+# ---------------------------------------------------------------------------
+
+_fonts_dir = Path(__file__).resolve().parent / "static" / "fonts"
+_image_dir = Path(__file__).resolve().parent / "static" / "image"
+_font_cache: dict = {}
+
+
+def make_qr_png(data: str, size: int = 235, border: int = 4) -> Image.Image:
+    """Generate a QR code as PNG image."""
+    qr = pyqrcode.create(data)
+    matrix = qr.code
+    modules = len(matrix)
+
+    total_modules = modules + border * 2
+    box_size = max(1, size // total_modules)
+    img_size = total_modules * box_size
+
+    img = Image.new("RGBA", (img_size, img_size), "white")
+    draw = ImageDraw.Draw(img)
+
+    for y, row in enumerate(matrix):
+        for x, cell in enumerate(row):
+            if cell:
+                x0 = (x + border) * box_size
+                y0 = (y + border) * box_size
+                draw.rectangle(
+                    [x0, y0, x0 + box_size - 1, y0 + box_size - 1],
+                    fill="black",
+                )
+
+    if img_size != size:
+        img = img.resize((size, size), Image.Resampling.NEAREST)
+
+    return img
+
+
+def get_font(family: str, size: int) -> ImageFont.FreeTypeFont:
+    """Load a TTF font from static/fonts/ with caching."""
+    key = (family, size)
+    if key not in _font_cache:
+        path = _fonts_dir / f"{family}.ttf"
+        _font_cache[key] = ImageFont.truetype(str(path), size)
+    return _font_cache[key]
+
+
+def _parse_design_config(card: GiftCard) -> DesignConfig:
+    """Parse design config from card's qr_config and text_config JSON columns."""
+    defaults = DesignConfig()
+    if not card.template_name and not card.template_asset_id:
+        return defaults
+
+    qr_data = {}
+    text_data = {}
+    if card.qr_config:
+        try:
+            qr_data = json.loads(card.qr_config)
+        except (json.JSONDecodeError, TypeError):
+            qr_data = {}
+    if card.text_config:
+        try:
+            text_data = json.loads(card.text_config)
+        except (json.JSONDecodeError, TypeError):
+            text_data = {}
+
+    return DesignConfig(
+        template_asset_id=card.template_asset_id,
+        template_name=card.template_name or defaults.template_name,
+        qr_x_frac=qr_data.get("qr_x_frac", defaults.qr_x_frac),
+        qr_y_frac=qr_data.get("qr_y_frac", defaults.qr_y_frac),
+        qr_size=qr_data.get("qr_size", defaults.qr_size),
+        text_x_frac=text_data.get("text_x_frac", defaults.text_x_frac),
+        text_y_frac=text_data.get("text_y_frac", defaults.text_y_frac),
+        font_family=text_data.get("font_family", defaults.font_family),
+        font_size=text_data.get("font_size", defaults.font_size),
+        font_color=text_data.get("font_color", defaults.font_color),
+        text_align=text_data.get("text_align", defaults.text_align),
+    )
+
+
+def _generate_template_fallback(template_name: str) -> Image.Image:
+    """Generate a simple fallback template if bundled assets are missing."""
+    if template_name == "landscape":
+        return Image.new("RGBA", (1050, 600), (245, 245, 250, 255))
+    return Image.new("RGBA", (425, 650), (245, 245, 250, 255))
+
+
+def _render_card_image_sync(
+    card: GiftCard, lnurl_url: str, scale: int = 1, template_bytes: bytes | None = None
+) -> bytes:
+    """Synchronous Pillow compositing: template + QR + text → PNG bytes."""
+    design = _parse_design_config(card)
+
+    # Load template (pre-fetched asset bytes or bundled fallback)
+    if template_bytes:
+        template = Image.open(BytesIO(template_bytes)).convert("RGBA")
+    else:
+        template_name = design.template_name or "portrait"
+        bundled = _image_dir / f"template_{template_name}.png"
+        if bundled.exists():
+            template = Image.open(bundled).convert("RGBA")
+        else:
+            template = _generate_template_fallback(template_name)
+
+    # Scale template if needed
+    if scale > 1:
+        template = template.resize(
+            (template.width * scale, template.height * scale),
+            Image.Resampling.LANCZOS,
+        )
+
+    draw = ImageDraw.Draw(template)
+
+    # Generate QR code at scaled size (minimum 150px)
+    qr_size = max(150, design.qr_size) * scale
+    qr_img = make_qr_png(lnurl_url, size=qr_size)
+
+    # Paste QR at normalized position
+    qr_x = int(design.qr_x_frac * template.width)
+    qr_y = int(design.qr_y_frac * template.height)
+    template.paste(qr_img, (qr_x, qr_y))
+
+    # Draw text block
+    font = get_font(design.font_family, design.font_size * scale)
+    anchor_map = {"left": "la", "center": "ma", "right": "ra"}
+    anchor = anchor_map.get(design.text_align, "la")
+
+    text_lines = [
+        f"{card.amount} sats",
+    ]
+    if card.recipient_name:
+        text_lines.append(f"For: {card.recipient_name}")
+    if card.message:
+        text_lines.append(card.message)
+
+    text_x = int(design.text_x_frac * template.width)
+    text_y = int(design.text_y_frac * template.height)
+    line_height = design.font_size * scale + 8
+    for line in text_lines:
+        draw.text(
+            (text_x, text_y),
+            line,
+            fill=design.font_color,
+            font=font,
+            anchor=anchor,
+        )
+        text_y += line_height
+
+    # Save to PNG bytes
+    output = BytesIO()
+    template.save(output, format="PNG")
+    return output.getvalue()
+
+
+async def render_card_image(card: GiftCard, lnurl_url: str, scale: int = 1) -> bytes:
+    """Async wrapper that offloads Pillow rendering to a thread.
+
+    Pre-fetches template asset bytes (if any) before offloading to thread.
+    """
+    template_bytes = None
+    design = _parse_design_config(card)
+    if design.template_asset_id:
+        try:
+            asset = await get_public_asset(design.template_asset_id)
+            if asset:
+                template_bytes = asset.data
+        except Exception as exc:
+            logger.warning(f"Failed to load template asset {design.template_asset_id}: {exc}")
+            template_bytes = None
+
+    return await asyncio.to_thread(
+        _render_card_image_sync, card, lnurl_url, scale, template_bytes
+    )
