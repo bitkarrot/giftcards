@@ -561,7 +561,7 @@
   cursor: move;
   touch-action: none;
   border: 1px dashed rgba(0, 0, 0, 0.3);
-  background: rgba(255, 255, 255, 0.1);
+  background: #ffffff;
 }
 
 .draggable-text {
