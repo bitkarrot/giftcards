@@ -39,7 +39,20 @@ window.PageGiftCards = {
       minQrSize: 150,
       dragState: null,
       resizeState: null,
-      isUploadingTemplate: false
+      isUploadingTemplate: false,
+      // Email delivery dialog
+      emailDialog: {
+        show: false,
+        loading: false,
+        card: null,
+        data: {
+          recipient_email: '',
+          email_mode: 'custom',
+          subject: '',
+          body: '',
+          template: 'notification'
+        }
+      }
     }
   },
   computed: {
@@ -94,6 +107,12 @@ window.PageGiftCards = {
         {label: 'DejaVu Sans', value: 'DejaVuSans'},
         {label: 'DejaVu Serif', value: 'DejaVuSerif'},
         {label: 'DejaVu Sans Mono', value: 'DejaVuSansMono'}
+      ]
+    },
+    emailModeOptions() {
+      return [
+        {label: 'Custom Text', value: 'custom'},
+        {label: 'Fancy HTML Template', value: 'fancy'}
       ]
     },
     previewTextStyle() {
@@ -490,6 +509,52 @@ window.PageGiftCards = {
         form
       )
       return data.id
+    },
+
+    // ----- Email delivery dialog -----
+
+    isValidEmail(val) {
+      if (!val) return false
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      return re.test(val)
+    },
+
+    openEmailDialog(card) {
+      this.emailDialog.card = card
+      this.emailDialog.data = {
+        recipient_email: card.recipient_email || '',
+        email_mode: 'custom',
+        subject: `You have a gift card from ${card.sender_name || 'Anonymous'}`,
+        body: '',
+        template: 'notification'
+      }
+      this.emailDialog.show = true
+    },
+
+    async sendEmail() {
+      if (!this.emailDialog.card) return
+      if (!this.isValidEmail(this.emailDialog.data.recipient_email)) {
+        LNbits.utils.notify('Enter a valid email address.', 'negative')
+        return
+      }
+      this.emailDialog.loading = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === this.emailDialog.card.wallet) || this.g.user.wallets[0]
+        const url = `/giftcards/api/v1/cards/${this.emailDialog.card.id}/deliver`
+        await LNbits.api.request(
+          'POST',
+          url,
+          wallet.adminkey,
+          this.emailDialog.data
+        )
+        this.emailDialog.show = false
+        LNbits.utils.notify('Email sent successfully', 'positive')
+        this.loadGiftCards()
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.emailDialog.loading = false
+      }
     }
   }
 }

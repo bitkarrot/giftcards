@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Gift Card</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: #f9f9f9; border-radius: 8px; padding: 24px;">
+    <p style="color: #333; font-size: 16px; line-height: 1.6; white-space: pre-wrap;">
+      {{ body }}
+    </p>
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 24px 0;">
+    <p style="color: #555; font-size: 14px;">
+      Claim your gift card: <a href="{{ claim_url }}" style="color: #1976d2; text-decoration: none;">{{ claim_url }}</a>
+    </p>
+  </div>
+</body>
+</html>

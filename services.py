@@ -350,3 +350,154 @@ async def render_card_image(card: GiftCard, lnurl_url: str, scale: int = 1) -> b
     return await asyncio.to_thread(
         _render_card_image_sync, card, lnurl_url, scale, template_bytes
     )
+
+
+# ---------------------------------------------------------------------------
+# Email delivery (Phase 2 — plan 02-03)
+# ---------------------------------------------------------------------------
+
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from lnbits.settings import settings
+from lnbits.helpers import is_valid_email_address
+
+from .crud import update_card_email_status
+
+_email_templates_dir = Path(__file__).resolve().parent / "static" / "email_templates"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_email_templates_dir)),
+    autoescape=select_autoescape(["html", "xml"]),
+)
+
+
+def render_email_template(template_name: str, **context) -> str:
+    """Render a Jinja2 email template with autoescape enabled."""
+    template = _jinja_env.get_template(template_name)
+    return template.render(**context)
+
+
+def _send_smtp_email(to_email: str, subject: str, text_body: str, html_body: str) -> None:
+    """Synchronous SMTP send following the events extension pattern.
+
+    Validates SMTP config, constructs a MIMEMultipart("alternative") message,
+    and sends via smtplib.SMTP + starttls + login + sendmail.
+    Called via asyncio.to_thread() from async callers.
+    """
+    if not settings.lnbits_email_notifications_enabled:
+        raise ValueError("Email notifications are disabled")
+    if not is_valid_email_address(settings.lnbits_email_notifications_email):
+        raise ValueError(
+            f"Invalid from email address: {settings.lnbits_email_notifications_email}"
+        )
+    if not is_valid_email_address(to_email):
+        raise ValueError(f"Invalid email address: {to_email}")
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = settings.lnbits_email_notifications_email
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(text_body, "plain"))
+    if html_body:
+        msg.attach(MIMEText(html_body, "html"))
+
+    username = (
+        settings.lnbits_email_notifications_username
+        or settings.lnbits_email_notifications_email
+    )
+    with smtplib.SMTP(
+        settings.lnbits_email_notifications_server,
+        settings.lnbits_email_notifications_port,
+    ) as smtp_server:
+        smtp_server.starttls()
+        smtp_server.login(username, settings.lnbits_email_notifications_password)
+        smtp_server.sendmail(
+            settings.lnbits_email_notifications_email,
+            [to_email],
+            msg.as_string(),
+        )
+
+
+async def send_notification_email(
+    sender_name: str,
+    recipient_email: str,
+    claim_url: str,
+    magic_link_url: str,
+) -> None:
+    """Send the magic link notification email (no raw_token, no card image — D-12).
+
+    Renders notification.html template and sends via SMTP (offloaded to thread).
+    """
+    sender = sender_name or "Anonymous"
+    subject = f"You have a gift card from {sender}"
+    html_body = render_email_template(
+        "notification.html",
+        sender_name=sender,
+        claim_url=claim_url,
+        magic_link_url=magic_link_url,
+    )
+    text_body = (
+        f"You have a gift card waiting from {sender}.\n\n"
+        f"Click here to claim it: {magic_link_url}\n\n"
+        f"This link expires in 30 minutes."
+    )
+    await asyncio.to_thread(
+        _send_smtp_email, recipient_email, subject, text_body, html_body
+    )
+
+
+async def send_gift_card_email(
+    card: GiftCard,
+    claim_url: str,
+    email_mode: str,
+    subject: str | None = None,
+    body: str | None = None,
+    template: str | None = None,
+) -> None:
+    """Orchestrate email delivery for a gift card.
+
+    Renders the email body based on mode (custom or fancy), sends via SMTP
+    (offloaded to thread), and updates email_status on the card record.
+    """
+    sender = card.sender_name or "Anonymous"
+    subj = subject or f"You have a gift card from {sender}"
+
+    if email_mode == "fancy":
+        html_body = render_email_template(
+            "fancy.html",
+            sender_name=sender,
+            message=card.message or "",
+            claim_url=claim_url,
+            amount=card.amount,
+        )
+        text_body = (
+            f"You have a gift card from {sender}.\n\n"
+            f"Amount: {card.amount} sats\n"
+            f"Message: {card.message or ''}\n\n"
+            f"Claim your gift card: {claim_url}"
+        )
+    else:
+        # Custom text mode
+        custom_body = body or ""
+        html_body = render_email_template(
+            "custom_text.html",
+            body=custom_body,
+            claim_url=claim_url,
+        )
+        text_body = f"{custom_body}\n\nClaim your gift card: {claim_url}"
+
+    try:
+        await asyncio.to_thread(
+            _send_smtp_email,
+            card.recipient_email,
+            subj,
+            text_body,
+            html_body,
+        )
+        await update_card_email_status(card.id, "sent")
+    except Exception as exc:
+        logger.warning(f"Email delivery failed for card {card.id[:8]}: {exc}")
+        await update_card_email_status(card.id, "failed")
+        raise

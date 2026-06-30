@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Gift Card from {{ sender_name }}</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #fafafa;">
+  <div style="background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <!-- Header -->
+    <div style="background: #1976d2; padding: 24px; text-align: center;">
+      <h1 style="color: #ffffff; font-size: 28px; margin: 0;">
+        {{ amount }} sats
+      </h1>
+      <p style="color: #bbdefb; font-size: 14px; margin-top: 8px;">
+        Bitcoin Lightning Gift Card
+      </p>
+    </div>
+
+    <!-- Message section -->
+    <div style="padding: 24px;">
+      <p style="color: #333; font-size: 16px; margin-bottom: 16px;">
+        <strong>From:</strong> {{ sender_name }}
+      </p>
+      {% if message %}
+      <div style="background: #f5f5f5; border-left: 4px solid #1976d2; padding: 16px; margin-bottom: 24px;">
+        <p style="color: #555; font-size: 15px; line-height: 1.5; margin: 0;">
+          {{ message }}
+        </p>
+      </div>
+      {% endif %}
+
+      <!-- CTA button -->
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="{{ claim_url }}"
+           style="display: inline-block; background: #1976d2; color: #ffffff; text-decoration: none;
+                  padding: 14px 36px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+          Claim Your Gift Card
+        </a>
+      </div>
+
+      <p style="color: #999; font-size: 12px; text-align: center; margin-top: 16px;">
+        If the button doesn't work, copy and paste this link:<br>
+        {{ claim_url }}
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f5f5f5; padding: 16px; text-align: center;">
+      <p style="color: #999; font-size: 11px; margin: 0;">
+        Sent via LNBits Gift Cards
+      </p>
+    </div>
+  </div>
+</body>
+</html>

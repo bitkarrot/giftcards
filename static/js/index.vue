@@ -128,17 +128,30 @@
                         </q-input>
                       </div>
                       <div class="col-12">
-                        <q-btn
-                          unelevated
-                          dense
-                          size="sm"
-                          icon="download"
-                          :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
-                          @click="downloadPrintable(props.row)"
-                          aria-label="Download gift card image"
-                        >
-                          Download PNG
-                        </q-btn>
+                        <div class="row q-gutter-sm">
+                          <q-btn
+                            unelevated
+                            dense
+                            size="sm"
+                            color="primary"
+                            icon="mail"
+                            @click="openEmailDialog(props.row)"
+                            aria-label="Send gift card email"
+                          >
+                            Send Email
+                          </q-btn>
+                          <q-btn
+                            unelevated
+                            dense
+                            size="sm"
+                            icon="download"
+                            :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
+                            @click="downloadPrintable(props.row)"
+                            aria-label="Download gift card image"
+                          >
+                            Download PNG
+                          </q-btn>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -438,6 +451,88 @@
       style="display: none"
       @change="handleTemplateSelected"
     />
+
+    <!-- Email Delivery Dialog -->
+    <q-dialog v-model="emailDialog.show" position="top">
+      <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+        <q-form @submit="sendEmail">
+          <div class="q-gutter-md">
+            <h6 class="text-subtitle1 q-my-none">Send Gift Card Email</h6>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="emailDialog.data.recipient_email"
+              type="email"
+              label="Recipient Email"
+              :rules="[val => !!val && isValidEmail(val) || 'Enter a valid email address']"
+            ></q-input>
+
+            <q-select
+              filled
+              dense
+              emit-value
+              map-options
+              v-model="emailDialog.data.email_mode"
+              :options="emailModeOptions"
+              label="Email Mode"
+            ></q-select>
+
+            <q-input
+              filled
+              dense
+              v-model.trim="emailDialog.data.subject"
+              type="text"
+              label="Subject"
+              hint="Defaults to 'You have a gift card from {sender}'."
+            ></q-input>
+
+            <div v-if="emailDialog.data.email_mode === 'custom'">
+              <q-input
+                filled
+                dense
+                v-model.trim="emailDialog.data.body"
+                type="textarea"
+                label="Email Body"
+                hint="Write your personal message to the recipient."
+              ></q-input>
+            </div>
+
+            <q-separator class="q-my-md"></q-separator>
+
+            <div class="text-caption">Preview:</div>
+            <q-card class="q-pa-md bg-grey-2">
+              <div class="text-caption text-grey-7">
+                Subject: {{ emailDialog.data.subject || 'You have a gift card from ' + (emailDialog.card ? (emailDialog.card.sender_name || 'Anonymous') : 'Anonymous') }}
+              </div>
+              <div class="text-body2 q-mt-sm">
+                <span v-if="emailDialog.data.email_mode === 'custom'">{{ emailDialog.data.body || '(email body preview)' }}</span>
+                <span v-else>Branded HTML template with sender name, message, and claim link.</span>
+              </div>
+            </q-card>
+
+            <div class="row q-mt-lg">
+              <q-btn
+                unelevated
+                color="primary"
+                type="submit"
+                label="Send Email"
+                :loading="emailDialog.loading"
+              ></q-btn>
+              <q-btn
+                v-close-popup
+                flat
+                dense
+                round
+                icon="close"
+                class="q-ml-auto"
+                aria-label="Close email dialog"
+              ></q-btn>
+            </div>
+          </div>
+        </q-form>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
