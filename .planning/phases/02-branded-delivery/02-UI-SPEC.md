@@ -110,7 +110,7 @@ Inherited from Phase 1 UI-SPEC. Extensions receive theme color variables at runt
 **Accent (`primary`) reserved for:**
 1. "Create Gift Card" primary CTA (issuer page — unchanged)
 2. "Send Email" primary CTA (email delivery dialog)
-3. "Redeem" button (claim page magic link landing + redemption page — unchanged)
+3. "Redeem Gift Card" button (claim page magic link landing) + "Redeem via Lightning Wallet" button (redemption page — unchanged)
 4. "Verify Email" / "Send Verification Link" primary CTA (claim page email entry)
 
 **Accent (`primary`) NOT used for:** status badges, secondary actions, table row expanders, copy-link buttons, download buttons, drag handles, template thumbnails, font styling controls, or any decorative element.
@@ -132,6 +132,8 @@ Inherited from Phase 1 UI-SPEC. Extensions receive theme color variables at runt
 ## Screen Contracts
 
 ### Screen 1: Card Designer (extends Create Gift Card Dialog)
+
+**Focal point:** The live drag-to-place preview (template background + draggable QR + draggable text block) — the issuer's eye stays here during design.
 
 **Trigger:** "Create Gift Card" button on issuer page — opens existing `q-dialog` (Phase 1), now extended with a design section.
 
@@ -223,6 +225,8 @@ designConfig = {
 
 ### Screen 2: Delivery Actions (extends Card List)
 
+**Focal point:** The new Delivery status badge column in the card list table — communicates delivery state at a glance; the expanded row's delivery action button row is the secondary focus.
+
 **Integration:** The existing card list table (`index.vue:30-127`) gains a new "Delivery" column and new action buttons in the expanded row. No changes to the table structure itself — only additions.
 
 **New table column — Delivery status (D-26):**
@@ -262,6 +266,8 @@ div.col-12 (in existing expanded row grid)
 
 ### Screen 3: Email Delivery Dialog
 
+**Focal point:** The live email preview card (subject + rendered body) — the issuer confirms content here before sending; the form fields above feed it.
+
 **Trigger:** "Send Email" or "Add Email" button in the card list expanded row.
 
 **Component:** `q-dialog` with `position="top"`, `q-card.q-pa-lg.q-pt-xl.lnbits__dialog-card` (standard LNBits dialog pattern).
@@ -288,7 +294,8 @@ q-dialog v-model="emailDialog.show" position="top"
             └── div.row.q-mt-lg
                 ├── q-btn[unelevated,color="primary",type="submit"] "Send Email"
                 │   :loading="emailDialog.loading"
-                └── q-btn[flat,color="grey",v-close-popup] "Cancel"
+                └── q-btn[flat,dense,round,v-close-popup] icon="close"
+                    aria-label="Close email dialog"
 ```
 
 **Email mode picker (D-18):**
@@ -319,6 +326,8 @@ q-dialog v-model="emailDialog.show" position="top"
 ---
 
 ### Screen 4: Claim Page — Email Entry (`/giftcards/claim`)
+
+**Focal point:** The centered email input + "Send Verification Link" CTA card — the only interactive surface on the page.
 
 **Route type:** Public, no LNBits account required. Served via `index_public` pattern (same as redeem page). LNBits header and drawer are NOT shown.
 
@@ -374,6 +383,8 @@ q-card.q-pa-lg
 
 ### Screen 5: Claim Page — Magic Link Landing (`/giftcards/claim/:magic_token`)
 
+**Focal point:** The list of pending gift cards (each card's amount + "Redeem Gift Card" button) — the recipient scans the list and picks one card to claim.
+
 **Route type:** Public (bearer token in URL — recipient proved email ownership by clicking the link).
 
 **Behavior on mount:** Auto-call `GET /giftcards/api/v1/claim/{magic_token}`. Show loading state while in flight.
@@ -406,11 +417,11 @@ q-card.q-pa-lg
                 │   │   ├── div.text-body2 v-if="card.message" "{message}"
                 │   │   └── div.text-caption.q-mt-sm "Received: {formatDate(created_at)}"
                 │   └── div.col-auto
-                │       └── q-btn[unelevated,color="primary"] "Redeem"
+                │       └── q-btn[unelevated,color="primary"] "Redeem Gift Card"
                 │           :href="'/giftcards/redeem/' + card.raw_token"
 ```
 
-Each card in the list shows: amount (Display typography), sender name, message (if set), received date (Label typography), and a "Redeem" button that navigates to `/giftcards/redeem/{raw_token}`.
+Each card in the list shows: amount (Display typography), sender name, message (if set), received date (Label typography), and a "Redeem Gift Card" button that navigates to `/giftcards/redeem/{raw_token}`.
 
 **Security note (D-16):** The magic link becomes invalid after a card is redeemed. If the recipient returns to the magic link URL after redeeming, they see State D (invalid/expired) unless they have other pending cards.
 
@@ -441,6 +452,8 @@ q-card.q-pa-lg
 ---
 
 ### Screen 6: Branded Redemption Page (extended from Phase 1)
+
+**Focal point:** The branded card image (`img.branded-card-img`) containing the QR code — the recipient scans this image with their Lightning wallet; the bare QR fallback is the secondary focus when no design was configured.
 
 **Integration:** The existing `redeem.vue` is extended. The active state (State A) now shows the branded card image (if a design was configured) above or instead of the bare QR code. All other states (redeemed, expired, not found, loading) are unchanged from Phase 1.
 
@@ -499,7 +512,7 @@ All Phase 1 copywriting remains in force. Phase 2 additions:
 | Primary CTA — send email | **Send Email** |
 | Primary CTA — claim page entry | **Send Verification Link** |
 | Primary CTA — claim page new link | **Request New Link** |
-| Primary CTA — redeem (claim list) | **Redeem** |
+| Primary CTA — redeem (claim list) | **Redeem Gift Card** |
 | Section heading — card designer | **Card Design** |
 | Template select label | **Template** |
 | Upload button label | **Upload Custom Template** |
@@ -513,6 +526,7 @@ All Phase 1 copywriting remains in force. Phase 2 additions:
 | Subject input label | **Subject** |
 | Email body input label | **Email Body** |
 | Preview label | **Preview:** |
+| Email dialog close button (icon-only) | icon `close` + `aria-label="Close email dialog"` |
 | Delivery column header | **Delivery** |
 | Delivery status — not sent | **Not sent** |
 | Delivery status — sent | **Sent** |
@@ -608,7 +622,7 @@ Validation fires on form submit only (not on blur). Use `q-form @submit` with `l
 3. If valid + has cards: show pending cards list (State B).
 4. If valid + no cards: show "No Pending Gift Cards" (State C).
 5. If invalid/expired (404/410): show "Link Invalid or Expired" (State D).
-6. Recipient clicks "Redeem" on a card → navigate to `/giftcards/redeem/{raw_token}`.
+6. Recipient clicks "Redeem Gift Card" on a card → navigate to `/giftcards/redeem/{raw_token}`.
 
 ### Printable PNG download
 
