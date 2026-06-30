@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Loop** - Issuer can create a funded gift card and a recipient can redeem it end-to-end (completed 2026-06-29)
 - [x] **Phase 2: Branded Delivery** - Issuer can design a branded card image and deliver it via email, nostr, or printable download (completed 2026-06-30)
-- [ ] **Phase 3: Scale & Manage** - Issuer can bulk-create cards, automate via REST API, and manage card status from a dashboard
+- [x] **Phase 3: Scale & Manage** - Issuer can bulk-create cards, automate via REST API, and manage card status from a dashboard (completed 2026-06-30)
 
 ## Phase Details
 
@@ -77,7 +77,12 @@ Plans:
   3. External systems can create gift cards and retrieve card status via authenticated REST API endpoints scoped to the issuer's LNBits wallet key.
   4. Issuer can view a list of all created cards, filter by status (created, active, redeemed, expired, cancelled), and inspect individual card details including creation, expiration, and redemption dates.
 
-**Plans**: TBD
+**Plans**: 3/3 plans complete
+
+- [x] 03-01-PLAN.md
+- [x] 03-02-PLAN.md
+- [x] 03-03-PLAN.md
+
 **UI hint**: yes
 
 ## Progress
@@ -89,4 +94,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Core Loop | 3/3 | Complete   | 2026-06-29 |
 | 2. Branded Delivery | 3/3 | Complete    | 2026-06-30 |
-| 3. Scale & Manage | 0/TBD | Not started | - |
+| 3. Scale & Manage | 3/3 | Complete   | 2026-06-30 |
