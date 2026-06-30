@@ -252,6 +252,116 @@
               ]"
             ></q-input>
 
+            <!-- Card Design Section -->
+            <q-separator class="q-my-md"></q-separator>
+            <h6 class="text-subtitle1 q-my-none">Card Design</h6>
+
+            <div class="row q-col-gutter-md">
+              <div class="col-12 col-md-6">
+                <q-select
+                  filled
+                  dense
+                  emit-value
+                  map-options
+                  v-model="selectedTemplate"
+                  :options="templateOptions"
+                  label="Template"
+                  @update:model-value="onTemplateChange"
+                ></q-select>
+              </div>
+              <div class="col-12 col-md-6" v-if="selectedTemplate === 'custom'">
+                <q-btn
+                  unelevated
+                  color="primary"
+                  icon="upload"
+                  label="Upload Custom Template"
+                  :loading="isUploadingTemplate"
+                  @click="triggerTemplateUpload"
+                ></q-btn>
+              </div>
+            </div>
+
+            <div class="row q-col-gutter-md q-mt-sm">
+              <div class="col-12 col-md-7">
+                <div
+                  class="card-preview"
+                  :style="{width: previewWidth + 'px', height: previewHeight + 'px'}"
+                >
+                  <img :src="templateUrl" class="template-bg" />
+                  <div
+                    class="draggable-qr"
+                    :style="{left: qrX + 'px', top: qrY + 'px', width: qrSize + 'px', height: qrSize + 'px'}"
+                    @pointerdown="startDrag($event, 'qr')"
+                    @pointermove="onDrag"
+                    @pointerup="endDrag"
+                  >
+                    <img
+                      src="/giftcards/static/image/qr_placeholder.png"
+                      style="width: 100%; height: 100%; object-fit: contain;"
+                      @error="$event.target.style.display='none'"
+                    />
+                    <div
+                      class="resize-handle"
+                      @pointerdown.stop="startResize"
+                      @pointermove="onResize"
+                      @pointerup="endResize"
+                    ></div>
+                  </div>
+                  <div
+                    class="draggable-text"
+                    :style="{left: textX + 'px', top: textY + 'px'}"
+                    @pointerdown="startDrag($event, 'text')"
+                    @pointermove="onDrag"
+                    @pointerup="endDrag"
+                  >
+                    <div :style="previewTextStyle">
+                      <div>{{ createDialog.data.amount || 0 }} sats</div>
+                      <div>For: {{ createDialog.data.recipient_name || 'Recipient' }}</div>
+                      <div>{{ createDialog.data.message || 'Your message' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-12 col-md-5">
+                <div class="q-gutter-sm">
+                  <q-select
+                    filled
+                    dense
+                    emit-value
+                    map-options
+                    v-model="selectedFont"
+                    :options="fontOptions"
+                    label="Font"
+                  ></q-select>
+                  <div class="text-caption">Font Size: {{ fontSize }}px</div>
+                  <q-slider
+                    v-model="fontSize"
+                    :min="12"
+                    :max="72"
+                    :step="1"
+                    label
+                  ></q-slider>
+                  <q-input
+                    filled
+                    dense
+                    v-model="fontColor"
+                    type="color"
+                    label="Font Color"
+                  ></q-input>
+                  <div class="text-caption">Alignment</div>
+                  <q-btn-toggle
+                    v-model="textAlign"
+                    unelevated
+                    :options="[
+                      {label: 'Left', value: 'left'},
+                      {label: 'Center', value: 'center'},
+                      {label: 'Right', value: 'right'}
+                    ]"
+                  ></q-btn-toggle>
+                </div>
+              </div>
+            </div>
+
             <div class="row q-mt-lg">
               <q-btn
                 unelevated
@@ -321,5 +431,61 @@
         </q-form>
       </q-card>
     </q-dialog>
+    <input
+      ref="templateUpload"
+      type="file"
+      accept="image/png,image/jpeg"
+      style="display: none"
+      @change="handleTemplateSelected"
+    />
   </div>
 </template>
+
+<style scoped>
+.card-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #f5f5f5;
+  user-select: none;
+  touch-action: none;
+}
+
+.template-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.draggable-qr {
+  position: absolute;
+  cursor: move;
+  touch-action: none;
+  border: 1px dashed rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.draggable-text {
+  position: absolute;
+  cursor: move;
+  touch-action: none;
+  max-width: 90%;
+  white-space: pre-wrap;
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  background: #1976d2;
+  border: 1px solid #fff;
+  touch-action: none;
+}
+</style>
