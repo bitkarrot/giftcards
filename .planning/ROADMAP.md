@@ -14,7 +14,7 @@ Build a complete Bitcoin Lightning gift card system as a LNBits extension. The j
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Loop** - Issuer can create a funded gift card and a recipient can redeem it end-to-end (completed 2026-06-29)
-- [ ] **Phase 2: Branded Delivery** - Issuer can design a branded card image and deliver it via email, nostr, or printable download
+- [x] **Phase 2: Branded Delivery** - Issuer can design a branded card image and deliver it via email, nostr, or printable download (completed 2026-06-30)
 - [ ] **Phase 3: Scale & Manage** - Issuer can bulk-create cards, automate via REST API, and manage card status from a dashboard
 
 ## Phase Details
@@ -56,11 +56,11 @@ Plans:
   3. Issuer can trigger nostr delivery; the recipient's nostr npub receives a DM containing the redemption link.
   4. Issuer can download a printable PNG image of the gift card for manual distribution.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 - [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
-- [ ] 02-03-PLAN.md
+- [x] 02-03-PLAN.md
 
 **UI hint**: yes
 
@@ -88,5 +88,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop | 3/3 | Complete   | 2026-06-29 |
-| 2. Branded Delivery | 2/3 | In Progress|  |
+| 2. Branded Delivery | 3/3 | Complete   | 2026-06-30 |
 | 3. Scale & Manage | 0/TBD | Not started | - |
