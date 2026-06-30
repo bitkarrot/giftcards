@@ -70,6 +70,9 @@ async def create_gift_card(
             "font_size": data.design.font_size,
             "font_color": data.design.font_color,
             "text_align": data.design.text_align,
+            "show_amount": data.design.show_amount,
+            "show_recipient": data.design.show_recipient,
+            "show_message": data.design.show_message,
         })
         template_asset_id = data.design.template_asset_id
         template_name = data.design.template_name
