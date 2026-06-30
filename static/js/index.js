@@ -34,6 +34,7 @@ window.PageGiftCards = {
       fontSize: 24,
       fontColor: '#000000',
       textAlign: 'left',
+      showText: true,
       previewWidth: 212,
       previewHeight: 325,
       minQrSize: 150,
@@ -204,6 +205,7 @@ window.PageGiftCards = {
       this.fontSize = 24
       this.fontColor = '#000000'
       this.textAlign = 'left'
+      this.showText = true
       this.previewWidth = 212
       this.previewHeight = 325
       this.dragState = null
@@ -226,7 +228,8 @@ window.PageGiftCards = {
           font_family: this.selectedFont,
           font_size: this.fontSize,
           font_color: this.fontColor,
-          text_align: this.textAlign
+          text_align: this.textAlign,
+          show_text: this.showText
         }
         const payload = {
           ...this.createDialog.data,

@@ -321,6 +321,7 @@
                     ></div>
                   </div>
                   <div
+                    v-if="showText"
                     class="draggable-text"
                     :style="{left: textX + 'px', top: textY + 'px'}"
                     @pointerdown="startDrag($event, 'text')"
@@ -337,7 +338,12 @@
               </div>
               <div class="col-12 col-md-5">
                 <div class="q-gutter-sm">
+                  <q-toggle
+                    v-model="showText"
+                    label="Show text (amount / recipient / message)"
+                  ></q-toggle>
                   <q-select
+                    v-if="showText"
                     filled
                     dense
                     emit-value
@@ -346,8 +352,9 @@
                     :options="fontOptions"
                     label="Font"
                   ></q-select>
-                  <div class="text-caption">Font Size: {{ fontSize }}px</div>
+                  <div v-if="showText" class="text-caption">Font Size: {{ fontSize }}px</div>
                   <q-slider
+                    v-if="showText"
                     v-model="fontSize"
                     :min="12"
                     :max="72"
@@ -355,14 +362,16 @@
                     label
                   ></q-slider>
                   <q-input
+                    v-if="showText"
                     filled
                     dense
                     v-model="fontColor"
                     type="color"
                     label="Font Color"
                   ></q-input>
-                  <div class="text-caption">Alignment</div>
+                  <div v-if="showText" class="text-caption">Alignment</div>
                   <q-btn-toggle
+                    v-if="showText"
                     v-model="textAlign"
                     unelevated
                     :options="[

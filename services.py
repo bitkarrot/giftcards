@@ -254,6 +254,7 @@ def _parse_design_config(card: GiftCard) -> DesignConfig:
         font_size=text_data.get("font_size", defaults.font_size),
         font_color=text_data.get("font_color", defaults.font_color),
         text_align=text_data.get("text_align", defaults.text_align),
+        show_text=text_data.get("show_text", defaults.show_text),
     )
 
 
@@ -299,31 +300,32 @@ def _render_card_image_sync(
     qr_y = int(design.qr_y_frac * template.height)
     template.paste(qr_img, (qr_x, qr_y))
 
-    # Draw text block
-    font = get_font(design.font_family, design.font_size * scale)
-    anchor_map = {"left": "la", "center": "ma", "right": "ra"}
-    anchor = anchor_map.get(design.text_align, "la")
+    # Draw text block (optional — issuer can hide amount/recipient/message)
+    if design.show_text:
+        font = get_font(design.font_family, design.font_size * scale)
+        anchor_map = {"left": "la", "center": "ma", "right": "ra"}
+        anchor = anchor_map.get(design.text_align, "la")
 
-    text_lines = [
-        f"{card.amount} sats",
-    ]
-    if card.recipient_name:
-        text_lines.append(f"For: {card.recipient_name}")
-    if card.message:
-        text_lines.append(card.message)
+        text_lines = [
+            f"{card.amount} sats",
+        ]
+        if card.recipient_name:
+            text_lines.append(f"For: {card.recipient_name}")
+        if card.message:
+            text_lines.append(card.message)
 
-    text_x = int(design.text_x_frac * template.width)
-    text_y = int(design.text_y_frac * template.height)
-    line_height = design.font_size * scale + 8
-    for line in text_lines:
-        draw.text(
-            (text_x, text_y),
-            line,
-            fill=design.font_color,
-            font=font,
-            anchor=anchor,
-        )
-        text_y += line_height
+        text_x = int(design.text_x_frac * template.width)
+        text_y = int(design.text_y_frac * template.height)
+        line_height = design.font_size * scale + 8
+        for line in text_lines:
+            draw.text(
+                (text_x, text_y),
+                line,
+                fill=design.font_color,
+                font=font,
+                anchor=anchor,
+            )
+            text_y += line_height
 
     # Save to PNG bytes
     output = BytesIO()
