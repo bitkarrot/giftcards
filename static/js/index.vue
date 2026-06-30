@@ -523,9 +523,33 @@
               <div class="text-caption text-grey-7">
                 Subject: {{ emailDialog.data.subject || 'You have a gift card from ' + (emailDialog.card ? (emailDialog.card.sender_name || 'Anonymous') : 'Anonymous') }}
               </div>
-              <div class="text-body2 q-mt-sm">
-                <span v-if="emailDialog.data.email_mode === 'custom'">{{ emailDialog.data.body || '(email body preview)' }}</span>
-                <span v-else>Branded HTML template with sender name, message, and claim link.</span>
+              <div v-if="emailDialog.data.email_mode === 'custom'" class="text-body2 q-mt-sm">
+                {{ emailDialog.data.body || '(email body preview)' }}
+              </div>
+              <div v-else class="q-mt-sm">
+                <div style="background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.1);">
+                  <div style="background: #1976d2; padding: 16px; text-align: center;">
+                    <div style="color: #ffffff; font-size: 22px; font-weight: bold;">
+                      {{ emailDialog.card ? emailDialog.card.amount : 0 }} sats
+                    </div>
+                    <div style="color: #bbdefb; font-size: 12px; margin-top: 4px;">
+                      Bitcoin Lightning Gift Card
+                    </div>
+                  </div>
+                  <div style="padding: 16px;">
+                    <div style="color: #333; font-size: 14px; margin-bottom: 12px;">
+                      <strong>From:</strong> {{ emailDialog.card ? (emailDialog.card.sender_name || 'Anonymous') : 'Anonymous' }}
+                    </div>
+                    <div v-if="emailDialog.card && emailDialog.card.message" style="background: #f5f5f5; border-left: 4px solid #1976d2; padding: 12px; margin-bottom: 12px;">
+                      <div style="color: #555; font-size: 13px;">{{ emailDialog.card.message }}</div>
+                    </div>
+                    <div style="text-align: center; margin: 16px 0;">
+                      <span style="display: inline-block; background: #1976d2; color: #ffffff; padding: 10px 28px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+                        Claim Your Gift Card
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </q-card>
 
