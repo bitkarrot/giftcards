@@ -265,26 +265,33 @@ def test_design_config_rejects_invalid_text_align():
 
 
 # ---------------------------------------------------------------------------
-# show_text toggle (UAT enhancement: optional amount/recipient/message)
+# Per-field text toggles (UAT enhancement: optional amount/recipient/message)
 # ---------------------------------------------------------------------------
 
-def test_design_config_show_text_defaults_true():
-    """show_text defaults to True (backward compatible with existing cards)."""
+def test_design_config_text_toggles_default_true():
+    """show_amount/show_recipient/show_message default to True (backward compatible)."""
     from giftcards.models import DesignConfig
 
-    assert DesignConfig().show_text is True
+    d = DesignConfig()
+    assert d.show_amount is True
+    assert d.show_recipient is True
+    assert d.show_message is True
 
 
-def test_design_config_accepts_show_text_false():
-    """show_text=False is accepted and stored."""
+def test_design_config_accepts_per_field_toggles_false():
+    """Each toggle can be independently set to False."""
     from giftcards.models import DesignConfig
 
-    assert DesignConfig(show_text=False).show_text is False
+    d = DesignConfig(show_amount=False, show_recipient=True, show_message=False)
+    assert d.show_amount is False
+    assert d.show_recipient is True
+    assert d.show_message is False
 
 
-def test_parse_design_config_reads_show_text():
-    """_parse_design_config reads show_text from the text_config JSON column."""
+def test_parse_design_config_reads_per_field_toggles():
+    """_parse_design_config reads show_amount/show_recipient/show_message from text_config."""
     import json
+    from datetime import datetime, timezone
     from giftcards.models import GiftCard
     from giftcards.services import _parse_design_config
 
@@ -301,13 +308,13 @@ def test_parse_design_config_reads_show_text():
         sender_name=None,
         message=None,
         expires_at=None,
-        created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        created_at=datetime.now(timezone.utc),
         redeemed_at=None,
         expired_at=None,
         template_asset_id=None,
         template_name="portrait",
         qr_config=json.dumps({"qr_x_frac": 0.1, "qr_y_frac": 0.7, "qr_size": 200}),
-        text_config=json.dumps({"show_text": False}),
+        text_config=json.dumps({"show_amount": False, "show_recipient": True, "show_message": False}),
         recipient_email=None,
         email_status="not_sent",
         email_subject=None,
@@ -315,28 +322,29 @@ def test_parse_design_config_reads_show_text():
         email_template=None,
     )
     design = _parse_design_config(card)
-    assert design.show_text is False
+    assert design.show_amount is False
+    assert design.show_recipient is True
+    assert design.show_message is False
 
 
-def test_render_card_image_omits_text_when_show_text_false():
-    """The renderer must not draw any text when show_text=False.
+def test_render_card_image_omits_text_when_all_toggles_false():
+    """The renderer must not draw any text when all three toggles are False.
 
-    We verify by rendering two images (show_text True vs False) and checking
-    that the show_text=False image has fewer distinct colors (text pixels
-    are absent).
+    We verify by rendering two images (all on vs all off) and checking that
+    the all-off image has fewer distinct colors (text pixels are absent).
     """
     import json
     from datetime import datetime, timezone
     from giftcards.models import GiftCard
     from giftcards.services import _render_card_image_sync
 
-    def _make_card(show_text: bool) -> GiftCard:
+    def _make_card(show_amount: bool, show_recipient: bool, show_message: bool) -> GiftCard:
         return GiftCard(
-            id=f"t{int(show_text)}",
+            id=f"t{int(show_amount)}{int(show_recipient)}{int(show_message)}",
             wallet="w",
             card_wallet_id=None,
             amount=1000,
-            token_hash=f"h{int(show_text)}",
+            token_hash=f"h{int(show_amount)}{int(show_recipient)}{int(show_message)}",
             raw_token=None,
             redemption_url=None,
             status="active",
@@ -357,7 +365,9 @@ def test_render_card_image_omits_text_when_show_text_false():
                 "font_size": 48,
                 "font_color": "#000000",
                 "text_align": "left",
-                "show_text": show_text,
+                "show_amount": show_amount,
+                "show_recipient": show_recipient,
+                "show_message": show_message,
             }),
             recipient_email=None,
             email_status="not_sent",
@@ -366,8 +376,8 @@ def test_render_card_image_omits_text_when_show_text_false():
             email_template=None,
         )
 
-    png_with = _render_card_image_sync(_make_card(True), "https://example.com/x", scale=1)
-    png_without = _render_card_image_sync(_make_card(False), "https://example.com/x", scale=1)
+    png_with = _render_card_image_sync(_make_card(True, True, True), "https://example.com/x", scale=1)
+    png_without = _render_card_image_sync(_make_card(False, False, False), "https://example.com/x", scale=1)
 
     from PIL import Image
     from io import BytesIO
@@ -375,9 +385,70 @@ def test_render_card_image_omits_text_when_show_text_false():
     img_without = Image.open(BytesIO(png_without)).convert("RGB")
     colors_with = len(set(img_with.getcolors(maxcolors=1000000)) or [])
     colors_without = len(set(img_without.getcolors(maxcolors=1000000)) or [])
-    # The image WITH text must have more distinct colors than the one WITHOUT
-    # (text adds black pixels at many anti-aliased shades).
     assert colors_with > colors_without, (
-        f"expected show_text=True to produce more colors than False, "
+        f"expected all-toggles-on to produce more colors than all-off, "
         f"got {colors_with} vs {colors_without}"
+    )
+
+
+def test_render_card_image_partial_toggles():
+    """Renderer draws only the enabled lines. With only show_amount=True,
+    the image should have more colors than all-off but fewer than all-on
+    (recipient + message lines are absent).
+    """
+    import json
+    from datetime import datetime, timezone
+    from giftcards.models import GiftCard
+    from giftcards.services import _render_card_image_sync
+
+    def _make_card(show_amount, show_recipient, show_message):
+        return GiftCard(
+            id=f"p{int(show_amount)}{int(show_recipient)}{int(show_message)}",
+            wallet="w",
+            card_wallet_id=None,
+            amount=1000,
+            token_hash=f"hp{int(show_amount)}{int(show_recipient)}{int(show_message)}",
+            raw_token=None,
+            redemption_url=None,
+            status="active",
+            recipient_name="Alice",
+            sender_name="Bob",
+            message="Hello",
+            expires_at=None,
+            created_at=datetime.now(timezone.utc),
+            redeemed_at=None,
+            expired_at=None,
+            template_asset_id=None,
+            template_name="portrait",
+            qr_config=json.dumps({"qr_x_frac": 0.1, "qr_y_frac": 0.7, "qr_size": 200}),
+            text_config=json.dumps({
+                "text_x_frac": 0.1,
+                "text_y_frac": 0.1,
+                "font_family": "DejaVuSans",
+                "font_size": 48,
+                "font_color": "#000000",
+                "text_align": "left",
+                "show_amount": show_amount,
+                "show_recipient": show_recipient,
+                "show_message": show_message,
+            }),
+            recipient_email=None,
+            email_status="not_sent",
+            email_subject=None,
+            email_body=None,
+            email_template=None,
+        )
+
+    png_all = _render_card_image_sync(_make_card(True, True, True), "https://example.com/x", scale=1)
+    png_amount_only = _render_card_image_sync(_make_card(True, False, False), "https://example.com/x", scale=1)
+    png_none = _render_card_image_sync(_make_card(False, False, False), "https://example.com/x", scale=1)
+
+    from PIL import Image
+    from io import BytesIO
+    c_all = len(set(Image.open(BytesIO(png_all)).convert("RGB").getcolors(maxcolors=1000000)) or [])
+    c_amount = len(set(Image.open(BytesIO(png_amount_only)).convert("RGB").getcolors(maxcolors=1000000)) or [])
+    c_none = len(set(Image.open(BytesIO(png_none)).convert("RGB").getcolors(maxcolors=1000000)) or [])
+
+    assert c_all > c_amount > c_none, (
+        f"expected all-on > amount-only > all-off, got {c_all} > {c_amount} > {c_none}"
     )

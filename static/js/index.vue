@@ -321,7 +321,7 @@
                     ></div>
                   </div>
                   <div
-                    v-if="showText"
+                    v-if="anyTextShown"
                     class="draggable-text"
                     :style="{left: textX + 'px', top: textY + 'px'}"
                     @pointerdown="startDrag($event, 'text')"
@@ -329,21 +329,30 @@
                     @pointerup="endDrag"
                   >
                     <div :style="previewTextStyle">
-                      <div>{{ createDialog.data.amount || 0 }} sats</div>
-                      <div>For: {{ createDialog.data.recipient_name || 'Recipient' }}</div>
-                      <div>{{ createDialog.data.message || 'Your message' }}</div>
+                      <div v-if="showAmount">{{ createDialog.data.amount || 0 }} sats</div>
+                      <div v-if="showRecipient">For: {{ createDialog.data.recipient_name || 'Recipient' }}</div>
+                      <div v-if="showMessage">{{ createDialog.data.message || 'Your message' }}</div>
                     </div>
                   </div>
                 </div>
               </div>
               <div class="col-12 col-md-5">
                 <div class="q-gutter-sm">
+                  <div class="text-caption text-weight-medium">Show on card</div>
                   <q-toggle
-                    v-model="showText"
-                    label="Show text (amount / recipient / message)"
+                    v-model="showAmount"
+                    label="Amount"
+                  ></q-toggle>
+                  <q-toggle
+                    v-model="showRecipient"
+                    label="Recipient name"
+                  ></q-toggle>
+                  <q-toggle
+                    v-model="showMessage"
+                    label="Message"
                   ></q-toggle>
                   <q-select
-                    v-if="showText"
+                    v-if="anyTextShown"
                     filled
                     dense
                     emit-value
@@ -352,9 +361,9 @@
                     :options="fontOptions"
                     label="Font"
                   ></q-select>
-                  <div v-if="showText" class="text-caption">Font Size: {{ fontSize }}px</div>
+                  <div v-if="anyTextShown" class="text-caption">Font Size: {{ fontSize }}px</div>
                   <q-slider
-                    v-if="showText"
+                    v-if="anyTextShown"
                     v-model="fontSize"
                     :min="12"
                     :max="72"
@@ -362,16 +371,16 @@
                     label
                   ></q-slider>
                   <q-input
-                    v-if="showText"
+                    v-if="anyTextShown"
                     filled
                     dense
                     v-model="fontColor"
                     type="color"
                     label="Font Color"
                   ></q-input>
-                  <div v-if="showText" class="text-caption">Alignment</div>
+                  <div v-if="anyTextShown" class="text-caption">Alignment</div>
                   <q-btn-toggle
-                    v-if="showText"
+                    v-if="anyTextShown"
                     v-model="textAlign"
                     unelevated
                     :options="[

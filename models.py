@@ -31,7 +31,9 @@ class DesignConfig(BaseModel):
     font_size: int = 24
     font_color: str = "#000000"
     text_align: str = "left"
-    show_text: bool = True
+    show_amount: bool = True
+    show_recipient: bool = True
+    show_message: bool = True
 
     @validator("template_name")
     def _validate_template_name(cls, v):

@@ -34,7 +34,9 @@ window.PageGiftCards = {
       fontSize: 24,
       fontColor: '#000000',
       textAlign: 'left',
-      showText: true,
+      showAmount: true,
+      showRecipient: true,
+      showMessage: true,
       previewWidth: 212,
       previewHeight: 325,
       minQrSize: 150,
@@ -109,6 +111,9 @@ window.PageGiftCards = {
         {label: 'DejaVu Serif', value: 'DejaVuSerif'},
         {label: 'DejaVu Sans Mono', value: 'DejaVuSansMono'}
       ]
+    },
+    anyTextShown() {
+      return this.showAmount || this.showRecipient || this.showMessage
     },
     emailModeOptions() {
       return [
@@ -205,7 +210,9 @@ window.PageGiftCards = {
       this.fontSize = 24
       this.fontColor = '#000000'
       this.textAlign = 'left'
-      this.showText = true
+      this.showAmount = true
+      this.showRecipient = true
+      this.showMessage = true
       this.previewWidth = 212
       this.previewHeight = 325
       this.dragState = null
@@ -229,7 +236,9 @@ window.PageGiftCards = {
           font_size: this.fontSize,
           font_color: this.fontColor,
           text_align: this.textAlign,
-          show_text: this.showText
+          show_amount: this.showAmount,
+          show_recipient: this.showRecipient,
+          show_message: this.showMessage
         }
         const payload = {
           ...this.createDialog.data,
