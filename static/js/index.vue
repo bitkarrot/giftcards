@@ -3,12 +3,21 @@
     <div class="col-12 col-md-8 col-lg-7 q-gutter-y-md">
       <q-card>
         <q-card-section>
-          <q-btn
-            unelevated
-            color="primary"
-            label="Create Gift Card"
-            @click="openCreateDialog"
-          ></q-btn>
+          <div class="row q-gutter-sm">
+            <q-btn
+              unelevated
+              color="primary"
+              label="Create Gift Card"
+              @click="openCreateDialog"
+            ></q-btn>
+            <q-btn
+              unelevated
+              outline
+              color="primary"
+              label="Bulk Create"
+              @click="openBulkDialog"
+            ></q-btn>
+          </div>
         </q-card-section>
       </q-card>
 
@@ -569,6 +578,274 @@
                 icon="close"
                 class="q-ml-auto"
                 aria-label="Close email dialog"
+              ></q-btn>
+            </div>
+          </div>
+        </q-form>
+      </q-card>
+    </q-dialog>
+
+    <!-- Bulk Create Dialog -->
+    <q-dialog v-model="bulkDialog.show" position="top">
+      <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+        <q-form @submit="submitBulkCreate">
+          <div class="q-gutter-md">
+            <h6 class="text-subtitle1 q-my-none">Bulk Create Gift Cards</h6>
+
+            <q-tabs
+              v-model="bulkDialog.activeTab"
+              dense
+              class="text-primary"
+            >
+              <q-tab name="same" label="Same Amount"></q-tab>
+              <q-tab name="csv" label="CSV Upload"></q-tab>
+            </q-tabs>
+
+            <q-tab-panels v-model="bulkDialog.activeTab" animated>
+              <!-- Same Amount Tab -->
+              <q-tab-panel name="same">
+                <div class="q-gutter-md">
+                  <q-select
+                    filled
+                    dense
+                    emit-value
+                    v-model="bulkDialog.sameData.wallet"
+                    :options="g.user.walletOptions"
+                    label="Wallet"
+                  ></q-select>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model.number="bulkDialog.sameData.count"
+                    type="number"
+                    label="Number of Cards"
+                    hint="How many gift cards to create (max 500)."
+                    :rules="[
+                      val => val > 0 || 'Enter at least 1 card',
+                      val => val <= 500 || 'Maximum 500 cards per bulk creation'
+                    ]"
+                  ></q-input>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model.number="bulkDialog.sameData.amount"
+                    type="number"
+                    label="Amount (sats)"
+                    :hint="'Same amount for all cards. Total: ' + (bulkDialog.sameData.count || 0) * (bulkDialog.sameData.amount || 0) + ' sats.'"
+                    :rules="[
+                      val => val > 0 || 'Amount must be greater than 0',
+                      val => val * (bulkDialog.sameData.count || 0) <= walletBalance || 'Total exceeds your wallet balance'
+                    ]"
+                  ></q-input>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model.trim="bulkDialog.sameData.recipient_name"
+                    type="text"
+                    label="Recipient Name"
+                    hint="Optional — same name shown on all cards. Leave blank for anonymous."
+                  ></q-input>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model.trim="bulkDialog.sameData.sender_name"
+                    type="text"
+                    label="Your Name"
+                    hint="Optional — same sender name on all cards."
+                  ></q-input>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model.trim="bulkDialog.sameData.message"
+                    type="textarea"
+                    label="Personal Message"
+                    hint="Optional — same message on all cards."
+                  ></q-input>
+
+                  <q-input
+                    filled
+                    dense
+                    v-model="bulkDialog.sameData.expires_at"
+                    type="date"
+                    label="Expires On"
+                    hint="No date = cards never expire."
+                    :rules="[
+                      val => !val || new Date(val) > new Date() || 'Expiration date must be in the future'
+                    ]"
+                  ></q-input>
+
+                  <q-separator class="q-my-md"></q-separator>
+                  <h6 class="text-subtitle1 q-my-none">Card Design</h6>
+
+                  <q-select
+                    filled
+                    dense
+                    emit-value
+                    map-options
+                    v-model="bulkDialog.sameData.designMode"
+                    :options="[
+                      {label: 'No design (bare QR)', value: 'none'},
+                      {label: 'One design for all cards', value: 'shared'}
+                    ]"
+                    label="Design Mode"
+                  ></q-select>
+
+                  <div v-if="bulkDialog.sameData.designMode === 'shared'">
+                    <div class="row q-col-gutter-md">
+                      <div class="col-12 col-md-6">
+                        <q-select
+                          filled
+                          dense
+                          emit-value
+                          map-options
+                          v-model="selectedTemplate"
+                          :options="templateOptions"
+                          label="Template"
+                          @update:model-value="onTemplateChange"
+                        ></q-select>
+                      </div>
+                      <div class="col-12 col-md-6" v-if="selectedTemplate === 'custom'">
+                        <q-btn
+                          unelevated
+                          color="primary"
+                          icon="upload"
+                          label="Upload Custom Template"
+                          :loading="isUploadingTemplate"
+                          @click="triggerTemplateUpload"
+                        ></q-btn>
+                      </div>
+                    </div>
+
+                    <div class="row q-col-gutter-md q-mt-sm">
+                      <div class="col-12 col-md-7">
+                        <div
+                          class="card-preview"
+                          :style="{width: previewWidth + 'px', height: previewHeight + 'px'}"
+                        >
+                          <img :src="templateUrl" class="template-bg" />
+                          <div
+                            class="draggable-qr"
+                            :style="{left: qrX + 'px', top: qrY + 'px', width: previewQrSize + 'px', height: previewQrSize + 'px'}"
+                            @pointerdown="startDrag($event, 'qr')"
+                            @pointermove="onDrag"
+                            @pointerup="endDrag"
+                          >
+                            <img
+                              src="/giftcards/static/image/qr_placeholder.png"
+                              style="width: 100%; height: 100%; object-fit: contain;"
+                              @error="$event.target.style.display='none'"
+                            />
+                            <div
+                              class="resize-handle"
+                              @pointerdown.stop="startResize"
+                              @pointermove="onResize"
+                              @pointerup="endResize"
+                            ></div>
+                          </div>
+                          <div
+                            v-if="anyTextShown"
+                            class="draggable-text"
+                            :style="{left: textX + 'px', top: textY + 'px'}"
+                            @pointerdown="startDrag($event, 'text')"
+                            @pointermove="onDrag"
+                            @pointerup="endDrag"
+                          >
+                            <div :style="previewTextStyle">
+                              <div v-if="showAmount">{{ bulkDialog.sameData.amount || 0 }} sats</div>
+                              <div v-if="showRecipient">For: {{ bulkDialog.sameData.recipient_name || 'Recipient' }}</div>
+                              <div v-if="showMessage">{{ bulkDialog.sameData.message || 'Your message' }}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="col-12 col-md-5">
+                        <div class="q-gutter-sm">
+                          <div class="text-caption text-weight-medium">Show on card</div>
+                          <q-toggle v-model="showAmount" label="Amount"></q-toggle>
+                          <q-toggle v-model="showRecipient" label="Recipient name"></q-toggle>
+                          <q-toggle v-model="showMessage" label="Message"></q-toggle>
+                          <q-select
+                            v-if="anyTextShown"
+                            filled
+                            dense
+                            emit-value
+                            map-options
+                            v-model="selectedFont"
+                            :options="fontOptions"
+                            label="Font"
+                          ></q-select>
+                          <div v-if="anyTextShown" class="text-caption">Font Size: {{ fontSize }}px</div>
+                          <q-slider
+                            v-if="anyTextShown"
+                            v-model="fontSize"
+                            :min="12"
+                            :max="72"
+                            :step="1"
+                            label
+                          ></q-slider>
+                          <q-input
+                            v-if="anyTextShown"
+                            filled
+                            dense
+                            v-model="fontColor"
+                            type="color"
+                            label="Font Color"
+                          ></q-input>
+                          <div v-if="anyTextShown" class="text-caption">Alignment</div>
+                          <q-btn-toggle
+                            v-if="anyTextShown"
+                            v-model="textAlign"
+                            unelevated
+                            :options="[
+                              {label: 'Left', value: 'left'},
+                              {label: 'Center', value: 'center'},
+                              {label: 'Right', value: 'right'}
+                            ]"
+                          ></q-btn-toggle>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <q-banner
+                    v-if="bulkTotalExceedsBalance"
+                    class="q-mt-md"
+                    color="warning"
+                    icon="warning"
+                  >
+                    Total cost ({{ (bulkDialog.sameData.count || 0) * (bulkDialog.sameData.amount || 0) }} sats) exceeds your wallet balance ({{ walletBalance }} sats).
+                  </q-banner>
+                </div>
+              </q-tab-panel>
+
+              <!-- CSV Upload Tab (placeholder — Plan 02) -->
+              <q-tab-panel name="csv">
+                <div class="text-body2 text-grey">
+                  CSV upload available in next update.
+                </div>
+              </q-tab-panel>
+            </q-tab-panels>
+
+            <div class="row q-mt-lg">
+              <q-btn
+                unelevated
+                color="primary"
+                type="submit"
+                :label="bulkSubmitLabel"
+                :loading="bulkDialog.loading"
+                :disable="bulkSubmitDisabled"
+              ></q-btn>
+              <q-btn
+                v-close-popup
+                flat
+                color="grey"
+                class="q-ml-auto"
+                label="Cancel"
               ></q-btn>
             </div>
           </div>

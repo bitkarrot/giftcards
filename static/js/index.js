@@ -57,6 +57,25 @@ window.PageGiftCards = {
           body: '',
           template: 'notification'
         }
+      },
+      // Bulk create dialog
+      bulkDialog: {
+        show: false,
+        loading: false,
+        activeTab: 'same',
+        sameData: {
+          wallet: null,
+          count: null,
+          amount: null,
+          recipient_name: '',
+          sender_name: '',
+          message: '',
+          expires_at: null,
+          designMode: 'none'
+        },
+        csvFile: null,
+        csvRows: [],
+        csvErrors: 0
       }
     }
   },
@@ -151,6 +170,19 @@ window.PageGiftCards = {
         textAlign: alignMap[this.textAlign] || 'left',
         lineHeight: '1.3'
       }
+    },
+    bulkSubmitLabel() {
+      return 'Create ' + (this.bulkDialog.sameData.count || 0) + ' Cards'
+    },
+    bulkSubmitDisabled() {
+      const count = this.bulkDialog.sameData.count
+      const amount = this.bulkDialog.sameData.amount
+      return count <= 0 || amount <= 0 || (count * amount > this.walletBalance)
+    },
+    bulkTotalExceedsBalance() {
+      const count = this.bulkDialog.sameData.count || 0
+      const amount = this.bulkDialog.sameData.amount || 0
+      return count * amount > this.walletBalance
     }
   },
   mounted() {
@@ -307,6 +339,7 @@ window.PageGiftCards = {
     getStatusColor(status) {
       switch (status) {
         case 'active': return 'positive'
+        case 'created': return 'grey-6'
         case 'redeemed': return 'grey-6'
         case 'expired': return 'warning'
         default: return 'grey'
@@ -316,6 +349,7 @@ window.PageGiftCards = {
     getStatusText(status) {
       switch (status) {
         case 'active': return 'Active'
+        case 'created': return 'Created'
         case 'redeemed': return 'Redeemed'
         case 'expired': return 'Expired'
         default: return status
@@ -611,6 +645,98 @@ window.PageGiftCards = {
         LNbits.utils.notifyApiError(error)
       } finally {
         this.emailDialog.loading = false
+      }
+    },
+
+    // ----- Bulk create dialog -----
+
+    openBulkDialog() {
+      this.bulkDialog.show = true
+      this.bulkDialog.activeTab = 'same'
+      this.bulkDialog.sameData = {
+        wallet: this.g.user.wallets.length > 0 ? this.g.user.wallets[0].id : null,
+        count: null,
+        amount: null,
+        recipient_name: '',
+        sender_name: '',
+        message: '',
+        expires_at: null,
+        designMode: 'none'
+      }
+      this.bulkDialog.csvFile = null
+      this.bulkDialog.csvRows = []
+      this.bulkDialog.csvErrors = 0
+      // Reset card designer to defaults
+      this.selectedTemplate = 'portrait'
+      this.templateAssetId = null
+      this.templateUrl = '/giftcards/static/image/template_portrait.png'
+      this.qrX = 21
+      this.qrY = 228
+      this.qrSize = 150
+      this.textX = 21
+      this.textY = 33
+      this.selectedFont = 'DejaVuSans'
+      this.fontSize = 24
+      this.fontColor = '#000000'
+      this.textAlign = 'left'
+      this.showAmount = true
+      this.showRecipient = true
+      this.showMessage = true
+      this.previewWidth = 212
+      this.previewHeight = 325
+      this.actualTemplateWidth = 425
+      this.actualTemplateHeight = 650
+    },
+
+    async submitBulkCreate() {
+      this.bulkDialog.loading = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === this.bulkDialog.sameData.wallet)
+        // Build design config from card designer state (if designMode === 'shared')
+        let design = null
+        if (this.bulkDialog.sameData.designMode === 'shared') {
+          design = {
+            template_asset_id: this.templateAssetId,
+            template_name: this.selectedTemplate,
+            qr_x_frac: this.qrX / this.previewWidth,
+            qr_y_frac: this.qrY / this.previewHeight,
+            qr_size: this.qrSize,
+            text_x_frac: this.textX / this.previewWidth,
+            text_y_frac: this.textY / this.previewHeight,
+            font_family: this.selectedFont,
+            font_size: this.fontSize,
+            font_color: this.fontColor,
+            text_align: this.textAlign,
+            show_amount: this.showAmount,
+            show_recipient: this.showRecipient,
+            show_message: this.showMessage
+          }
+        }
+        const payload = {
+          count: this.bulkDialog.sameData.count,
+          amount: this.bulkDialog.sameData.amount,
+          recipient_name: this.bulkDialog.sameData.recipient_name || null,
+          sender_name: this.bulkDialog.sameData.sender_name || null,
+          message: this.bulkDialog.sameData.message || null,
+          expires_at: this.bulkDialog.sameData.expires_at || null,
+          design: design
+        }
+        await LNbits.api.request(
+          'POST',
+          '/giftcards/api/v1/cards/bulk',
+          wallet.adminkey,
+          payload
+        )
+
+        this.bulkDialog.show = false
+        const count = this.bulkDialog.sameData.count
+        LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
+        this.loadGiftCards()
+        this.loadWalletBalance()
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.bulkDialog.loading = false
       }
     }
   }
