@@ -40,6 +40,57 @@ async def get_cards_by_wallet(wallet_id: str) -> list[GiftCardSummary]:
     )
 
 
+async def get_cards_by_wallet_filtered(
+    wallet_id: str,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[float] = None,
+    date_to: Optional[float] = None,
+) -> list[GiftCardSummary]:
+    """Return gift cards for a wallet with optional server-side filters.
+
+    Per D-12 (status, search, date range) and RESEARCH.md Pattern 4
+    (Server-Side Filtered Query). All filter values use parameterized SQL
+    (:status, :search, timestamp_placeholder) — no string interpolation of
+    user input (T-03-14). The WHERE wallet = :wallet clause is ALWAYS
+    present so cross-wallet leakage is impossible (T-03-15). Search uses
+    LOWER(col) LIKE LOWER(:search) for cross-DB case-insensitive matching
+    (RESEARCH.md Pitfall 3 — works on both SQLite and PostgreSQL).
+    Results are ordered by created_at DESC.
+    """
+    query = (
+        "SELECT id, amount, status, recipient_name, sender_name, message, "
+        "expires_at, created_at, redeemed_at, expired_at, redemption_url, "
+        "recipient_email, email_status "
+        "FROM giftcards.cards WHERE wallet = :wallet"
+    )
+    values: dict = {"wallet": wallet_id}
+
+    if status is not None:
+        query += " AND status = :status"
+        values["status"] = status
+
+    if search is not None:
+        query += (
+            " AND (LOWER(recipient_name) LIKE LOWER(:search) "
+            "OR LOWER(sender_name) LIKE LOWER(:search) "
+            "OR LOWER(id) LIKE LOWER(:search))"
+        )
+        values["search"] = f"%{search}%"
+
+    if date_from is not None:
+        query += f" AND created_at >= {db.timestamp_placeholder('date_from')}"
+        values["date_from"] = date_from
+
+    if date_to is not None:
+        query += f" AND created_at <= {db.timestamp_placeholder('date_to')}"
+        values["date_to"] = date_to
+
+    query += " ORDER BY created_at DESC"
+
+    return await db.fetchall(query, values, GiftCardSummary)
+
+
 async def mark_redeeming(token_hash: str) -> Optional[GiftCard]:
     """Atomically mark a card as redeeming. Returns the card if successful, None if already redeemed/not active."""
     result = await db.execute(

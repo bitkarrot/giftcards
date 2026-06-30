@@ -23,6 +23,7 @@ from .crud import (
     mark_redeeming,
     reset_card_to_active,
     get_cards_by_wallet,
+    get_cards_by_wallet_filtered,
     count_recent_magic_links,
     get_pending_cards_by_email,
     get_magic_link_by_hash,
@@ -63,6 +64,23 @@ from .services import (
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
 giftcards_lnurl_router = APIRouter(prefix="/api/v1/lnurl")
 giftcards_claim_router = APIRouter(prefix="/api/v1/claim")
+
+
+def _parse_date_to_timestamp(date_str: str) -> float:
+    """Convert a date string to a UTC timestamp.
+
+    Handles both date-only strings ("2026-01-15") and full datetime
+    strings ("2026-01-15T12:00:00" or with timezone). Naive datetimes
+    are assumed to be UTC.
+    """
+    # Date-only format: "2026-01-15" -> start of that day in UTC
+    if len(date_str) == 10 and date_str.count("-") == 2:
+        dt = datetime.fromisoformat(date_str + "T00:00:00+00:00")
+    else:
+        dt = datetime.fromisoformat(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
 
 
 @giftcards_api_router.post("")
@@ -182,13 +200,45 @@ async def api_get_cards(
 ) -> list[GiftCardSummary]:
     """Get all gift cards for the authenticated wallet.
 
-    Per D-10 (invoice key for reads). Filter params (status, search,
-    date_from, date_to) are accepted but filtering logic is implemented
-    in Plan 03 — this plan just adds the params to the signature so the
-    frontend can start sending them. Per D-12.
+    Per D-10 (invoice key for reads) and D-12 (server-side filtering).
+    When any filter param (status, search, date_from, date_to) is provided,
+    delegates to get_cards_by_wallet_filtered which builds a parameterized
+    dynamic WHERE clause (T-03-14) with an always-present wallet isolation
+    clause (T-03-15). Date strings are converted to timestamps via
+    datetime.fromisoformat, handling both date-only ("2026-01-15") and
+    full datetime strings.
     """
     try:
-        cards = await get_cards_by_wallet(wallet.wallet.id)
+        # When called directly (e.g. in unit tests), FastAPI Query params
+        # are Query objects rather than their resolved defaults. Normalize
+        # non-string/non-None values to None so the filter logic works
+        # correctly in both real requests and direct test calls.
+        if status is not None and not isinstance(status, str):
+            status = None
+        if search is not None and not isinstance(search, str):
+            search = None
+
+        # Convert date strings to timestamps if provided
+        date_from_ts = None
+        date_to_ts = None
+        if date_from is not None and isinstance(date_from, str):
+            date_from_ts = _parse_date_to_timestamp(date_from)
+        if date_to is not None and isinstance(date_to, str):
+            date_to_ts = _parse_date_to_timestamp(date_to)
+
+        has_filters = any(
+            v is not None for v in (status, search, date_from_ts, date_to_ts)
+        )
+        if has_filters:
+            cards = await get_cards_by_wallet_filtered(
+                wallet.wallet.id,
+                status=status,
+                search=search,
+                date_from=date_from_ts,
+                date_to=date_to_ts,
+            )
+        else:
+            cards = await get_cards_by_wallet(wallet.wallet.id)
         return cards
     except Exception as e:
         logger.error(f"Failed to get cards: {e}")
