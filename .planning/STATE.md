@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Core Loop
 status: complete
-stopped_at: Phase 2 context gathered
-last_updated: "2026-06-30T01:22:51.459Z"
+stopped_at: Phase 2 UI-SPEC approved
+last_updated: "2026-06-30T01:43:33.778Z"
 last_activity: 2026-06-29
 last_activity_desc: "Post-session: architecture refactor (no per-card wallets), LNURL/proxy/frontend fixes, icon added"
 progress:
@@ -100,9 +100,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-30T01:22:51.453Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-branded-delivery/02-CONTEXT.md
+Last session: 2026-06-30T01:43:33.772Z
+Stopped at: Phase 2 UI-SPEC approved
+Resume file: .planning/phases/02-branded-delivery/02-UI-SPEC.md
 Next: Phase 2 — Branded Delivery (templates, email, nostr, printable download)
 
 ### Post-Session Changes (2026-06-29, outside GSD workflow)
