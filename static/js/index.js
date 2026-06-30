@@ -85,8 +85,20 @@ window.PageGiftCards = {
       // Card detail dialog
       detailDialog: {
         show: false,
-        card: null
+        card: null,
+        cardImageUrl: null
       },
+      // Dashboard filters (D-12)
+      dashboardFilters: {
+        status: null,
+        search: '',
+        dateFrom: null,
+        dateTo: null,
+        dateRangeLabel: ''
+      },
+      // Multi-select (D-14)
+      selectedCards: [],
+      bulkEmailLoading: false,
       // Card edit dialog
       editDialog: {
         show: false,
@@ -254,6 +266,22 @@ window.PageGiftCards = {
       }))
       // Merge and sort by row index
       return [...validRows, ...errorRows].sort((a, b) => a.rowIndex - b.rowIndex)
+    },
+    statusFilterOptions() {
+      // D-12: status dropdown options. 'cancelled' is NOT included since
+      // no Phase 3 operation produces it (deferred to v2 AUDT-02).
+      return [
+        {label: 'Created', value: 'created'},
+        {label: 'Active', value: 'active'},
+        {label: 'Redeemed', value: 'redeemed'},
+        {label: 'Expired', value: 'expired'}
+      ]
+    },
+    anyFilterActive() {
+      return !!(this.dashboardFilters.status ||
+                this.dashboardFilters.search ||
+                this.dashboardFilters.dateFrom ||
+                this.dashboardFilters.dateTo)
     }
   },
   mounted() {
@@ -264,11 +292,26 @@ window.PageGiftCards = {
     async loadGiftCards() {
       this.loading = true
       try {
-        const response = await LNbits.api.request(
-          'GET',
-          '/giftcards/api/v1/cards',
-          this.g.user.wallets[0].adminkey
-        )
+        // Build query string from dashboardFilters (D-12 server-side filtering)
+        const params = new URLSearchParams()
+        if (this.dashboardFilters.status) {
+          params.append('status', this.dashboardFilters.status)
+        }
+        if (this.dashboardFilters.search) {
+          params.append('search', this.dashboardFilters.search)
+        }
+        if (this.dashboardFilters.dateFrom) {
+          params.append('date_from', this.dashboardFilters.dateFrom)
+        }
+        if (this.dashboardFilters.dateTo) {
+          params.append('date_to', this.dashboardFilters.dateTo)
+        }
+        const queryString = params.toString()
+        const url = '/giftcards/api/v1/cards' + (queryString ? '?' + queryString : '')
+        // Use the wallet's inkey (invoice key) since GET now accepts invoice key (D-10)
+        const wallet = this.g.user.wallets[0]
+        const key = wallet.inkey || wallet.adminkey
+        const response = await LNbits.api.request('GET', url, key)
         this.giftCards = response.data || []
       } catch (error) {
         LNbits.utils.notifyApiError(error)
@@ -470,22 +513,38 @@ window.PageGiftCards = {
       }
     },
 
-    exportCSV() {
-      if (this.giftCards.length === 0) {
+    exportCSV(scope) {
+      // scope: 'selected' → export selectedCards, 'filtered' → export
+      // current giftCards list, undefined → export all giftCards (legacy)
+      let cards
+      if (scope === 'selected') {
+        cards = this.selectedCards
+      } else {
+        cards = this.giftCards
+      }
+      if (cards.length === 0) {
         LNbits.utils.notify('No gift cards to export', 'warning')
         return
       }
 
-      const headers = ['ID', 'Amount (sats)', 'Recipient', 'Sender', 'Message', 'Status', 'Created', 'Expires']
-      const rows = this.giftCards.map(card => [
+      const headers = [
+        'card_id', 'amount', 'status', 'recipient_name', 'sender_name',
+        'message', 'recipient_email', 'email_status', 'redemption_url',
+        'created_at', 'expires_at', 'redeemed_at'
+      ]
+      const rows = cards.map(card => [
         card.id,
         card.amount,
+        card.status,
         card.recipient_name || '',
         card.sender_name || '',
         card.message || '',
-        card.status,
-        this.formatDate(card.created_at),
-        card.expires_at ? this.formatDate(card.expires_at) : 'Never'
+        card.recipient_email || '',
+        card.email_status || '',
+        card.redemption_url || '',
+        card.created_at || '',
+        card.expires_at || '',
+        card.redeemed_at || ''
       ])
 
       let csv = headers.join(',') + '\n'
@@ -493,11 +552,12 @@ window.PageGiftCards = {
         csv += row.map(cell => `"${cell}"`).join(',') + '\n'
       })
 
-      const blob = new Blob([csv], { type: 'text/csv' })
+      const blob = new Blob([csv], {type: 'text/csv'})
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `giftcards_${new Date().toISOString().split('T')[0]}.csv`
+      const suffix = scope === 'selected' ? 'selected' : (scope === 'filtered' ? 'filtered' : 'all')
+      a.download = `giftcards_${suffix}_${new Date().toISOString().split('T')[0]}.csv`
       a.click()
       window.URL.revokeObjectURL(url)
 
@@ -901,9 +961,27 @@ window.PageGiftCards = {
 
     // ----- Card detail / edit / delete dialogs -----
 
-    openDetailDialog(card) {
+    async openDetailDialog(card) {
       this.detailDialog.card = card
+      this.detailDialog.cardImageUrl = null
       this.detailDialog.show = true
+      // Fetch full card details via GET /cards/{id} with admin key (D-13)
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
+        const response = await LNbits.api.request(
+          'GET',
+          '/giftcards/api/v1/cards/' + card.id + '?include_link=true',
+          wallet.adminkey
+        )
+        this.detailDialog.card = response.data
+        // Set card image URL if the card has a design (public image endpoint)
+        if (card.token_hash) {
+          this.detailDialog.cardImageUrl = '/giftcards/api/v1/cards/' + card.token_hash + '/image'
+        }
+      } catch (error) {
+        // Full detail fetch failed — keep the summary card data already set
+        console.error('Failed to load card details:', error)
+      }
     },
 
     openEditDialog(card) {
@@ -964,6 +1042,111 @@ window.PageGiftCards = {
         LNbits.utils.notifyApiError(error)
       } finally {
         this.deleteDialog.loading = false
+      }
+    },
+
+    // ----- Dashboard filters (D-12) -----
+
+    applyFilters() {
+      this.selectedCards = []
+      this.loadGiftCards()
+    },
+
+    clearFilters() {
+      this.dashboardFilters = {
+        status: null,
+        search: '',
+        dateFrom: null,
+        dateTo: null,
+        dateRangeLabel: ''
+      }
+      this.selectedCards = []
+      this.loadGiftCards()
+    },
+
+    showDateRangePopup() {
+      // q-popup-proxy is attached to the q-input via ref; toggle it
+      if (this.$refs.dateRangePopup) {
+        this.$refs.dateRangePopup.show()
+      }
+    },
+
+    applyDateRange() {
+      // Build a human-readable label from dateFrom / dateTo
+      const from = this.dashboardFilters.dateFrom
+      const to = this.dashboardFilters.dateTo
+      if (from && to) {
+        this.dashboardFilters.dateRangeLabel = from + ' — ' + to
+      } else if (from) {
+        this.dashboardFilters.dateRangeLabel = 'From ' + from
+      } else if (to) {
+        this.dashboardFilters.dateRangeLabel = 'Until ' + to
+      } else {
+        this.dashboardFilters.dateRangeLabel = ''
+      }
+      this.applyFilters()
+      if (this.$refs.dateRangePopup) {
+        this.$refs.dateRangePopup.hide()
+      }
+    },
+
+    clearDateRange() {
+      this.dashboardFilters.dateFrom = null
+      this.dashboardFilters.dateTo = null
+      this.dashboardFilters.dateRangeLabel = ''
+      this.applyFilters()
+    },
+
+    // ----- Bulk email sending (D-04, D-14) -----
+
+    async sendBulkEmails(scope) {
+      // scope: 'selected' → use selectedCards, 'filtered' → use giftCards
+      let targetCards
+      if (scope === 'selected') {
+        targetCards = this.selectedCards
+      } else {
+        targetCards = this.giftCards
+      }
+      // Filter to cards that have a recipient_email
+      const emailable = targetCards.filter(c => c.recipient_email)
+      const skipped = targetCards.length - emailable.length
+      if (emailable.length === 0) {
+        LNbits.utils.notify(
+          'No cards with recipient email addresses to send to.',
+          'warning'
+        )
+        return
+      }
+      this.bulkEmailLoading = true
+      let sent = 0
+      let failed = 0
+      try {
+        for (const card of emailable) {
+          try {
+            const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
+            const url = '/giftcards/api/v1/cards/' + card.id + '/deliver'
+            await LNbits.api.request('POST', url, wallet.adminkey, {
+              recipient_email: card.recipient_email,
+              email_mode: 'custom',
+              subject: 'You have a gift card from ' + (card.sender_name || 'Anonymous'),
+              body: ''
+            })
+            sent++
+          } catch (err) {
+            failed++
+          }
+        }
+        const msg = sent + ' emails sent, ' + skipped + ' skipped (no email address)'
+        if (failed > 0) {
+          LNbits.utils.notify(msg + ', ' + failed + ' failed', 'warning')
+        } else {
+          LNbits.utils.notify(msg, 'positive')
+        }
+        this.loadGiftCards()
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.bulkEmailLoading = false
       }
     }
   }

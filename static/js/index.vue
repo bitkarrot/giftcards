@@ -23,6 +23,131 @@
 
       <q-card>
         <q-card-section>
+          <!-- Filter Bar (D-12) -->
+          <div class="row items-center q-col-gutter-sm q-mb-md">
+            <div class="col-12 col-sm-6 col-md-3">
+              <q-select
+                filled
+                dense
+                clearable
+                emit-value
+                map-options
+                v-model="dashboardFilters.status"
+                :options="statusFilterOptions"
+                label="Filter by Status"
+                @update:model-value="applyFilters"
+              ></q-select>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4">
+              <q-input
+                filled
+                dense
+                clearable
+                debounce="300"
+                v-model="dashboardFilters.search"
+                label="Search"
+                hint="Search recipient, sender, or card ID."
+                @update:model-value="applyFilters"
+              ></q-input>
+            </div>
+            <div class="col-12 col-md-4">
+              <q-input
+                filled
+                dense
+                readonly
+                clearable
+                v-model="dashboardFilters.dateRangeLabel"
+                label="Created Between"
+                :hint="dashboardFilters.dateRangeLabel || 'Filter by creation date.'"
+                @click="showDateRangePopup"
+              >
+                <template v-slot:append>
+                  <q-icon name="event" @click="showDateRangePopup" style="cursor: pointer"></q-icon>
+                </template>
+                <q-popup-proxy ref="dateRangePopup" transition-show="scale" transition-hide="scale">
+                  <div class="q-gutter-md q-pa-md">
+                    <div>
+                      <div class="text-caption q-mb-xs">From</div>
+                      <q-date v-model="dashboardFilters.dateFrom" mask="YYYY-MM-DD"></q-date>
+                    </div>
+                    <div>
+                      <div class="text-caption q-mb-xs">To</div>
+                      <q-date v-model="dashboardFilters.dateTo" mask="YYYY-MM-DD"></q-date>
+                    </div>
+                    <div class="row justify-end q-mt-sm">
+                      <q-btn flat color="grey" label="Clear" @click="clearDateRange"></q-btn>
+                      <q-btn unelevated color="primary" label="Apply" @click="applyDateRange"></q-btn>
+                    </div>
+                  </div>
+                </q-popup-proxy>
+              </q-input>
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                color="grey"
+                icon="filter_alt_off"
+                label="Clear Filters"
+                @click="clearFilters"
+                v-if="anyFilterActive"
+              ></q-btn>
+            </div>
+          </div>
+
+          <!-- Bulk Action Bar (D-14) -->
+          <div class="row items-center q-col-gutter-sm q-mb-md">
+            <div class="col">
+              <div class="text-caption" v-if="selectedCards.length > 0">
+                {{ selectedCards.length }} card(s) selected
+              </div>
+            </div>
+            <div class="col-auto" v-if="selectedCards.length > 0">
+              <q-btn
+                unelevated
+                dense
+                size="sm"
+                color="primary"
+                icon="mail"
+                label="Send All Emails"
+                @click="sendBulkEmails('selected')"
+                :loading="bulkEmailLoading"
+                class="q-mr-sm"
+              ></q-btn>
+              <q-btn
+                unelevated
+                dense
+                size="sm"
+                icon="download"
+                :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
+                label="Download CSV"
+                @click="exportCSV('selected')"
+              ></q-btn>
+            </div>
+            <div class="col-auto" v-if="selectedCards.length === 0 && giftCards.length > 0">
+              <q-btn
+                flat
+                dense
+                size="sm"
+                color="grey"
+                icon="mail"
+                label="Send All (Filtered)"
+                @click="sendBulkEmails('filtered')"
+                :loading="bulkEmailLoading"
+                class="q-mr-sm"
+              ></q-btn>
+              <q-btn
+                flat
+                dense
+                size="sm"
+                color="grey"
+                icon="download"
+                label="Download CSV (Filtered)"
+                @click="exportCSV('filtered')"
+              ></q-btn>
+            </div>
+          </div>
+
           <div class="row items-center no-wrap q-mb-md">
             <div class="col">
               <h5 class="text-subtitle1 q-my-none">Gift Cards</h5>
@@ -43,6 +168,8 @@
             row-key="id"
             :columns="giftCardColumns"
             v-model:pagination="tablePagination"
+            v-model:selected="selectedCards"
+            selection="multiple"
             :loading="loading"
           >
             <template v-slot:header="props">
@@ -1200,6 +1327,16 @@
               ></q-btn>
             </template>
           </q-input>
+
+          <div v-if="detailDialog.cardImageUrl">
+            <div class="text-caption q-mt-md">Card Image</div>
+            <img
+              class="branded-card-img"
+              :src="detailDialog.cardImageUrl"
+              alt="Branded gift card image"
+              :style="{ maxWidth: '100%', borderRadius: '8px' }"
+            />
+          </div>
 
           <div class="row q-mt-lg">
             <q-btn
