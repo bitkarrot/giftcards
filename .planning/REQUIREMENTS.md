@@ -23,16 +23,16 @@
 
 ### Delivery (DELV)
 
-- [ ] **DELV-01**: Gift card can be delivered to a recipient by email as a PNG image attachment.
-- [ ] **DELV-02**: Email delivery includes the sender's personal message and a link to redeem the gift card.
-- [ ] **DELV-03**: Gift card can be delivered to a nostr npub as a direct message containing the redemption link.
-- [ ] **DELV-04**: Issuer can download a printable gift card image (PNG) for manual distribution.
+- [x] **DELV-01**: Gift card can be delivered to a recipient by email as a PNG image attachment.
+- [x] **DELV-02**: Email delivery includes the sender's personal message and a link to redeem the gift card.
+- [x] **DELV-03**: Gift card can be delivered to a nostr npub as a direct message containing the redemption link.
+- [x] **DELV-04**: Issuer can download a printable gift card image (PNG) for manual distribution.
 
 ### Templates (TPLT)
 
-- [ ] **TPLT-01**: Gift card image can use a sample template (e.g., Christmas, birthday, generic gift card).
-- [ ] **TPLT-02**: Issuer can choose the QR code placement on the gift card image (e.g., corner, center).
-- [ ] **TPLT-03**: Gift card image renders the sats amount, recipient name, and sender message on the chosen template.
+- [x] **TPLT-01**: Gift card image can use a sample template (e.g., Christmas, birthday, generic gift card).
+- [x] **TPLT-02**: Issuer can choose the QR code placement on the gift card image (e.g., corner, center).
+- [x] **TPLT-03**: Gift card image renders the sats amount, recipient name, and sender message on the chosen template.
 
 ### Bulk Creation (BULK)
 
@@ -88,13 +88,13 @@
 | REDM-03 | Phase 1 | Complete |
 | REDM-04 | Phase 1 | Complete |
 | REDM-05 | Phase 1 | Complete |
-| DELV-01 | Phase 2 | Pending |
-| DELV-02 | Phase 2 | Pending |
-| DELV-03 | Phase 2 | Pending |
-| DELV-04 | Phase 2 | Pending |
-| TPLT-01 | Phase 2 | Pending |
-| TPLT-02 | Phase 2 | Pending |
-| TPLT-03 | Phase 2 | Pending |
+| DELV-01 | Phase 2 | Complete |
+| DELV-02 | Phase 2 | Complete |
+| DELV-03 | Phase 2 | Complete |
+| DELV-04 | Phase 2 | Complete |
+| TPLT-01 | Phase 2 | Complete |
+| TPLT-02 | Phase 2 | Complete |
+| TPLT-03 | Phase 2 | Complete |
 | BULK-01 | Phase 3 | Pending |
 | BULK-02 | Phase 3 | Pending |
 | BULK-03 | Phase 3 | Pending |
