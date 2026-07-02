@@ -428,3 +428,72 @@ async def test_public_card_endpoint_has_design_false():
     with patch("giftcards.views_api.get_card_by_token_hash", new_callable=AsyncMock, return_value=card):
         result = await api_get_public_card(token_hash="a" * 64)
         assert result.has_design == False
+
+
+def test_render_card_image_bare_qr_without_template():
+    """A card without design renders a square bare QR image with no template."""
+    from io import BytesIO
+    from datetime import datetime
+    from giftcards.models import GiftCard
+    from giftcards.services import _render_card_image_sync
+
+    card = GiftCard(
+        id="gc_bare_qr",
+        wallet="w",
+        card_wallet_id=None,
+        amount=1000,
+        token_hash="a" * 64,
+        status="active",
+        recipient_name=None,
+        sender_name=None,
+        message=None,
+        expires_at=None,
+        created_at=datetime.now(),
+        redeemed_at=None,
+        expired_at=None,
+        template_name=None,
+        template_asset_id=None,
+        qr_config=None,
+        text_config=None,
+    )
+
+    png = _render_card_image_sync(card, "https://example.com/lnurl", scale=1)
+    img = Image.open(BytesIO(png)).convert("RGB")
+    assert img.width == img.height, "bare QR image should be square"
+    assert img.width == 400, "bare QR base size should be 400px"
+
+    # Branded portrait template is 425x650, so verify we did not use it.
+    assert (img.width, img.height) != (425, 650)
+
+
+@pytest.mark.anyio
+async def test_render_card_image_bare_qr_async():
+    """Async render_card_image returns a bare QR for a card without design."""
+    from io import BytesIO
+    from datetime import datetime
+    from giftcards.models import GiftCard
+    from giftcards.services import render_card_image
+
+    card = GiftCard(
+        id="gc_bare_qr_async",
+        wallet="w",
+        card_wallet_id=None,
+        amount=1000,
+        token_hash="b" * 64,
+        status="active",
+        recipient_name=None,
+        sender_name=None,
+        message=None,
+        expires_at=None,
+        created_at=datetime.now(),
+        redeemed_at=None,
+        expired_at=None,
+        template_name=None,
+        template_asset_id=None,
+        qr_config=None,
+        text_config=None,
+    )
+
+    png = await render_card_image(card, "https://example.com/lnurl", scale=1)
+    img = Image.open(BytesIO(png)).convert("RGB")
+    assert img.width == img.height == 400

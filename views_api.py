@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import asyncio
 import hashlib
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
@@ -19,6 +20,7 @@ from PIL import Image, ImageDraw
 from .crud import (
     get_card_by_token_hash,
     get_card,
+    get_cards_by_ids,
     mark_redeemed,
     mark_redeeming,
     reset_card_to_active,
@@ -42,6 +44,7 @@ from .models import (
     ClaimRequest,
     DeliverRequest,
     BulkCreateRequest,
+    BulkDeleteRequest,
     CardDetailResponse,
     CSVRow,
     CSVValidationError,
@@ -59,6 +62,8 @@ from .services import (
     parse_csv,
     validate_csv_rows,
     reclaim_sats_and_delete,
+    bulk_reclaim_and_delete,
+    _parse_design_config,
 )
 
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
@@ -146,6 +151,8 @@ async def api_bulk_create(
                         design_fields["font_size"] = csv_row.font_size
                     if csv_row.font_color is not None:
                         design_fields["font_color"] = csv_row.font_color
+                    if csv_row.bg_color is not None:
+                        design_fields["bg_color"] = csv_row.bg_color
                     if csv_row.text_align is not None:
                         design_fields["text_align"] = csv_row.text_align
                     if design_fields:
@@ -507,12 +514,15 @@ async def api_get_card_detail(
         status=card.status,
         recipient_name=card.recipient_name,
         sender_name=card.sender_name,
+        recipient_email=card.recipient_email,
         message=card.message,
         created_at=card.created_at,
         expires_at=card.expires_at,
         redeemed_at=card.redeemed_at,
         email_status=card.email_status,
+        token_hash=card.token_hash,
         redemption_url=card.redemption_url if include_link else None,
+        design=_parse_design_config(card) if (card.template_name or card.template_asset_id) else None,
     )
 
 
@@ -522,10 +532,11 @@ async def api_update_card(
     data: UpdateCardRequest,
     wallet: WalletTypeInfo = Depends(require_admin_key),
 ) -> dict:
-    """Update card metadata fields.
+    """Update card metadata and design fields.
 
     Per D-15 — amount is NOT editable (requires cancel + recreate).
-    Only recipient_name, sender_name, message, recipient_email are updatable.
+    Metadata: recipient_name, sender_name, message, recipient_email.
+    Design: template selection, QR position, text styling, background color.
     Returns 404 if not found, 403 if card belongs to a different wallet.
     """
     card = await get_card(card_id)
@@ -535,11 +546,82 @@ async def api_update_card(
     if card.wallet != wallet.wallet.id:
         raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
 
-    updates = data.dict(exclude_none=True)
+    # Separate metadata fields from the optional design config.
+    # The design is serialized into the qr_config / text_config JSON
+    # columns plus template_name / template_asset_id, matching the
+    # layout used by create_gift_card.
+    updates = {}
+    for field in ("recipient_name", "sender_name", "message", "recipient_email"):
+        val = getattr(data, field)
+        if val is not None:
+            updates[field] = val
+
+    if data.clear_design:
+        updates["qr_config"] = None
+        updates["text_config"] = None
+        updates["template_asset_id"] = None
+        updates["template_name"] = None
+    elif data.design is not None:
+        d = data.design
+        updates["qr_config"] = json.dumps({
+            "qr_x_frac": d.qr_x_frac,
+            "qr_y_frac": d.qr_y_frac,
+            "qr_size": d.qr_size,
+        })
+        updates["text_config"] = json.dumps({
+            "text_x_frac": d.text_x_frac,
+            "text_y_frac": d.text_y_frac,
+            "font_family": d.font_family,
+            "font_size": d.font_size,
+            "font_color": d.font_color,
+            "bg_color": d.bg_color,
+            "text_align": d.text_align,
+            "show_amount": d.show_amount,
+            "show_recipient": d.show_recipient,
+            "show_message": d.show_message,
+        })
+        updates["template_asset_id"] = d.template_asset_id
+        updates["template_name"] = d.template_name
+
     if updates:
         await update_card_fields(card_id, updates)
 
     return {"status": "updated"}
+
+
+@giftcards_api_router.delete("/bulk")
+async def api_bulk_delete_cards(
+    data: BulkDeleteRequest,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Delete multiple selected gift cards, reclaiming sats for active ones.
+
+    Redeemed cards are silently skipped. Returns a summary of deleted,
+    skipped, and reclaimed sats.
+    """
+    cards = await get_cards_by_ids(data.card_ids)
+    found_ids = {card.id for card in cards}
+    missing_ids = set(data.card_ids) - found_ids
+    if missing_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Gift card(s) not found: {sorted(missing_ids)}",
+        )
+
+    wrong_wallet = [card.id for card in cards if card.wallet != wallet.wallet.id]
+    if wrong_wallet:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Card(s) do not belong to this wallet: {sorted(wrong_wallet)}",
+        )
+
+    result = await bulk_reclaim_and_delete(cards)
+    return {
+        "status": "deleted",
+        "deleted": result["deleted"],
+        "skipped_redeemed": result["skipped_redeemed"],
+        "reclaimed_sats": result["reclaimed_sats"],
+    }
 
 
 @giftcards_api_router.delete("/{card_id}")
@@ -616,6 +698,7 @@ async def api_deliver_email(
             subject=data.subject,
             body=data.body,
             template=data.template,
+            bg_color=data.bg_color,
         )
         return {"status": "sent"}
     except Exception as exc:

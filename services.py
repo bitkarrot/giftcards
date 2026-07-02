@@ -78,6 +78,7 @@ async def create_gift_card(
             "font_family": data.design.font_family,
             "font_size": data.design.font_size,
             "font_color": data.design.font_color,
+            "bg_color": data.design.bg_color,
             "text_align": data.design.text_align,
             "show_amount": data.design.show_amount,
             "show_recipient": data.design.show_recipient,
@@ -235,6 +236,30 @@ async def reclaim_sats_and_delete(card: GiftCard) -> None:
     await delete_card(card.id)
 
 
+async def bulk_reclaim_and_delete(cards: list[GiftCard]) -> dict:
+    """Delete a list of cards, reclaiming sats for active ones and skipping redeemed.
+
+    Returns a summary of how many cards were deleted, how many were
+    skipped because they were redeemed, and the total sats reclaimed.
+    """
+    deleted = 0
+    skipped_redeemed = 0
+    reclaimed_sats = 0
+    for card in cards:
+        if card.status == "redeemed":
+            skipped_redeemed += 1
+            continue
+        if card.status == "active":
+            reclaimed_sats += card.amount
+        await reclaim_sats_and_delete(card)
+        deleted += 1
+    return {
+        "deleted": deleted,
+        "skipped_redeemed": skipped_redeemed,
+        "reclaimed_sats": reclaimed_sats,
+    }
+
+
 def parse_csv(content: bytes) -> list[dict]:
     """Parse CSV bytes into a list of dicts with row_num keys.
 
@@ -324,12 +349,15 @@ def get_font(family: str, size: int) -> ImageFont.FreeTypeFont:
     return _font_cache[key]
 
 
-def _parse_design_config(card: GiftCard) -> DesignConfig:
-    """Parse design config from card's qr_config and text_config JSON columns."""
-    defaults = DesignConfig()
-    if not card.template_name and not card.template_asset_id:
-        return defaults
+def _parse_design_config(card: GiftCard) -> DesignConfig | None:
+    """Parse design config from card's qr_config and text_config JSON columns.
 
+    Returns None when the card has no template (bare QR mode).
+    """
+    if not card.template_name and not card.template_asset_id:
+        return None
+
+    defaults = DesignConfig()
     qr_data = {}
     text_data = {}
     if card.qr_config:
@@ -354,6 +382,7 @@ def _parse_design_config(card: GiftCard) -> DesignConfig:
         font_family=text_data.get("font_family", defaults.font_family),
         font_size=text_data.get("font_size", defaults.font_size),
         font_color=text_data.get("font_color", defaults.font_color),
+        bg_color=text_data.get("bg_color", defaults.bg_color),
         text_align=text_data.get("text_align", defaults.text_align),
         show_amount=text_data.get("show_amount", defaults.show_amount),
         show_recipient=text_data.get("show_recipient", defaults.show_recipient),
@@ -368,22 +397,51 @@ def _generate_template_fallback(template_name: str) -> Image.Image:
     return Image.new("RGBA", (425, 650), (245, 245, 250, 255))
 
 
+def _hex_to_rgba(hex_color: str) -> tuple[int, int, int, int]:
+    """Convert a #RRGGBB hex string to an (R, G, B, 255) tuple."""
+    h = hex_color.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 255)
+
+
+def _render_bare_qr_image_sync(lnurl_url: str, scale: int = 1) -> bytes:
+    """Render a square bare QR image with no template or text overlay."""
+    base_size = 400
+    size = base_size * scale
+    canvas = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+    qr_size = max(150, base_size - 40) * scale
+    qr_img = make_qr_png(lnurl_url, size=qr_size)
+    qr_x = (size - qr_img.width) // 2
+    qr_y = (size - qr_img.height) // 2
+    canvas.paste(qr_img, (qr_x, qr_y))
+    output = BytesIO()
+    canvas.save(output, format="PNG")
+    return output.getvalue()
+
+
 def _render_card_image_sync(
     card: GiftCard, lnurl_url: str, scale: int = 1, template_bytes: bytes | None = None
 ) -> bytes:
     """Synchronous Pillow compositing: template + QR + text → PNG bytes."""
     design = _parse_design_config(card)
+    if design is None:
+        return _render_bare_qr_image_sync(lnurl_url, scale=scale)
 
     # Load template (pre-fetched asset bytes or bundled fallback)
     if template_bytes:
         template = Image.open(BytesIO(template_bytes)).convert("RGBA")
     else:
         template_name = design.template_name or "portrait"
-        bundled = _image_dir / f"template_{template_name}.png"
-        if bundled.exists():
-            template = Image.open(bundled).convert("RGBA")
+        # For portrait/landscape, a user-supplied bg_color replaces the
+        # bundled template with a solid color fill of the chosen color.
+        if design.bg_color and template_name in ("portrait", "landscape"):
+            fallback = _generate_template_fallback(template_name)
+            template = Image.new("RGBA", fallback.size, _hex_to_rgba(design.bg_color))
         else:
-            template = _generate_template_fallback(template_name)
+            bundled = _image_dir / f"template_{template_name}.png"
+            if bundled.exists():
+                template = Image.open(bundled).convert("RGBA")
+            else:
+                template = _generate_template_fallback(template_name)
 
     # Scale template if needed
     if scale > 1:
@@ -440,8 +498,11 @@ async def render_card_image(card: GiftCard, lnurl_url: str, scale: int = 1) -> b
 
     Pre-fetches template asset bytes (if any) before offloading to thread.
     """
-    template_bytes = None
     design = _parse_design_config(card)
+    if design is None:
+        return await asyncio.to_thread(_render_bare_qr_image_sync, lnurl_url, scale)
+
+    template_bytes = None
     if design.template_asset_id:
         try:
             asset = await get_public_asset(design.template_asset_id)
@@ -535,7 +596,7 @@ async def send_notification_email(
     Renders notification.html template and sends via SMTP (offloaded to thread).
     """
     sender = sender_name or "Anonymous"
-    subject = f"You have a gift card from {sender}"
+    subject = f"Redeem your Lightning Gift card from {sender}"
     html_body = render_email_template(
         "notification.html",
         sender_name=sender,
@@ -543,7 +604,7 @@ async def send_notification_email(
         magic_link_url=magic_link_url,
     )
     text_body = (
-        f"You have a gift card waiting from {sender}.\n\n"
+        f"Your Lightning gift card from {sender} is ready to redeem.\n\n"
         f"Click here to claim it: {magic_link_url}\n\n"
         f"This link expires in 30 minutes."
     )
@@ -559,6 +620,7 @@ async def send_gift_card_email(
     subject: str | None = None,
     body: str | None = None,
     template: str | None = None,
+    bg_color: str | None = None,
 ) -> None:
     """Orchestrate email delivery for a gift card.
 
@@ -575,6 +637,7 @@ async def send_gift_card_email(
             message=card.message or "",
             claim_url=claim_url,
             amount=card.amount,
+            bg_color=bg_color or "#1976d2",
         )
         text_body = (
             f"You have a gift card from {sender}.\n\n"

@@ -40,6 +40,19 @@ async def get_cards_by_wallet(wallet_id: str) -> list[GiftCardSummary]:
     )
 
 
+async def get_cards_by_ids(card_ids: list[str]) -> list[GiftCard]:
+    """Return full card records for the given ids (no wallet filter)."""
+    if not card_ids:
+        return []
+    placeholders = ", ".join(f":id_{i}" for i in range(len(card_ids)))
+    params = {f"id_{i}": card_id for i, card_id in enumerate(card_ids)}
+    return await db.fetchall(
+        f"SELECT * FROM giftcards.cards WHERE id IN ({placeholders})",
+        params,
+        GiftCard,
+    )
+
+
 async def get_cards_by_wallet_filtered(
     wallet_id: str,
     status: Optional[str] = None,
@@ -192,12 +205,23 @@ async def delete_card(card_id: str) -> None:
 
 
 async def update_card_fields(card_id: str, fields: dict) -> None:
-    """Update editable card metadata fields.
+    """Update editable card metadata and design fields.
 
-    Only recipient_name, sender_name, message, recipient_email are allowed
+    Metadata: recipient_name, sender_name, message, recipient_email
     (per D-15 — amount changes require cancel + recreate).
+    Design: template_name, template_asset_id, qr_config, text_config
+    (serialized JSON columns from DesignConfig).
     """
-    allowed = {"recipient_name", "sender_name", "message", "recipient_email"}
+    allowed = {
+        "recipient_name",
+        "sender_name",
+        "message",
+        "recipient_email",
+        "template_name",
+        "template_asset_id",
+        "qr_config",
+        "text_config",
+    }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return

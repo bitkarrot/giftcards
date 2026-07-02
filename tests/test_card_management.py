@@ -245,6 +245,92 @@ async def test_api_update_card_cross_wallet_forbidden():
     assert exc_info.value.status_code == 403
 
 
+@pytest.mark.anyio
+async def test_api_update_card_clear_design():
+    """PUT /cards/{id} with clear_design=True nulls out all design columns."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from giftcards.views_api import api_update_card
+    from giftcards.crud import update_card_fields
+
+    card = await _make_card(wallet_id="wallet_a")
+    # Populate design columns as if the card had a custom design.
+    await update_card_fields(card.id, {
+        "template_name": "portrait",
+        "template_asset_id": "asset_123",
+        "qr_config": '{"qr_x_frac": 0.1, "qr_y_frac": 0.7, "qr_size": 150}',
+        "text_config": '{"text_x_frac": 0.1, "text_y_frac": 0.05}',
+    })
+    stored = await get_card(card.id)
+    assert stored.template_name == "portrait"
+    assert stored.template_asset_id == "asset_123"
+    assert stored.qr_config is not None
+    assert stored.text_config is not None
+
+    req = UpdateCardRequest(clear_design=True)
+    result = await api_update_card(
+        card_id=card.id,
+        data=req,
+        wallet=_wallet_mock("wallet_a"),
+    )
+
+    assert result["status"] == "updated"
+    cleared = await get_card(card.id)
+    assert cleared.template_name is None
+    assert cleared.template_asset_id is None
+    assert cleared.qr_config is None
+    assert cleared.text_config is None
+
+
+@pytest.mark.anyio
+async def test_api_update_card_design_takes_priority_over_clear():
+    """When both design and clear_design are set, clear_design wins (design is ignored)."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from giftcards.views_api import api_update_card
+    from giftcards.models import DesignConfig
+    from giftcards.crud import update_card_fields
+
+    card = await _make_card(wallet_id="wallet_a")
+    await update_card_fields(card.id, {
+        "template_name": "portrait",
+        "qr_config": '{"qr_x_frac": 0.1, "qr_y_frac": 0.7, "qr_size": 150}',
+        "text_config": '{"text_x_frac": 0.1, "text_y_frac": 0.05}',
+    })
+
+    design = DesignConfig(
+        template_name="portrait",
+        qr_x_frac=0.2,
+        qr_y_frac=0.3,
+        qr_size=200,
+        text_x_frac=0.1,
+        text_y_frac=0.05,
+        font_family="DejaVuSans",
+        font_size=24,
+        font_color="#000000",
+        bg_color="#ebedf5",
+        text_align="left",
+        show_amount=True,
+        show_recipient=True,
+        show_message=True,
+    )
+    req = UpdateCardRequest(design=design, clear_design=True)
+    result = await api_update_card(
+        card_id=card.id,
+        data=req,
+        wallet=_wallet_mock("wallet_a"),
+    )
+
+    assert result["status"] == "updated"
+    cleared = await get_card(card.id)
+    # clear_design wins — design columns should be nulled
+    assert cleared.template_name is None
+    assert cleared.qr_config is None
+    assert cleared.text_config is None
+
+
 # ---------------------------------------------------------------------------
 # DELETE endpoint — active card reclaims and deletes
 # ---------------------------------------------------------------------------
@@ -280,3 +366,168 @@ async def test_api_delete_card_active_reclaims_and_deletes():
     assert ("wallet_a", 500) in balance_changes
     deleted = await get_card(card.id)
     assert deleted is None
+
+
+# ---------------------------------------------------------------------------
+# Bulk DELETE endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_api_bulk_delete_cards_deletes_active_and_reclaims():
+    """DELETE /cards/bulk deletes selected active cards and reclaims sats."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from fastapi import HTTPException
+    from giftcards.models import BulkDeleteRequest
+    from giftcards.views_api import api_bulk_delete_cards
+
+    card1 = await _make_card(wallet_id="wallet_a", amount=500, status="active")
+    card2 = await _make_card(wallet_id="wallet_a", amount=700, status="active")
+
+    balance_changes = []
+
+    async def _update_balance(wallet, amount, conn=None):
+        balance_changes.append((wallet.id, amount))
+
+    with patch("giftcards.services.get_wallet") as mock_get_wallet, \
+         patch("giftcards.services.update_wallet_balance", new=_update_balance):
+        mock_wallet = MagicMock()
+        mock_wallet.id = "wallet_a"
+        mock_get_wallet.return_value = mock_wallet
+
+        req = BulkDeleteRequest(card_ids=[card1.id, card2.id])
+        result = await api_bulk_delete_cards(
+            data=req,
+            wallet=_wallet_mock("wallet_a"),
+        )
+
+    assert result["status"] == "deleted"
+    assert result["deleted"] == 2
+    assert result["skipped_redeemed"] == 0
+    assert result["reclaimed_sats"] == 1200
+    assert ("wallet_a", 500) in balance_changes
+    assert ("wallet_a", 700) in balance_changes
+    assert await get_card(card1.id) is None
+    assert await get_card(card2.id) is None
+
+
+@pytest.mark.anyio
+async def test_api_bulk_delete_cards_skips_redeemed():
+    """DELETE /cards/bulk skips redeemed cards and deletes the rest."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from giftcards.models import BulkDeleteRequest
+    from giftcards.views_api import api_bulk_delete_cards
+
+    active_card = await _make_card(wallet_id="wallet_a", amount=500, status="active")
+    redeemed_card = await _make_card(wallet_id="wallet_a", amount=600, status="redeemed")
+
+    balance_changes = []
+
+    async def _update_balance(wallet, amount, conn=None):
+        balance_changes.append((wallet.id, amount))
+
+    with patch("giftcards.services.get_wallet") as mock_get_wallet, \
+         patch("giftcards.services.update_wallet_balance", new=_update_balance):
+        mock_wallet = MagicMock()
+        mock_wallet.id = "wallet_a"
+        mock_get_wallet.return_value = mock_wallet
+
+        req = BulkDeleteRequest(card_ids=[active_card.id, redeemed_card.id])
+        result = await api_bulk_delete_cards(
+            data=req,
+            wallet=_wallet_mock("wallet_a"),
+        )
+
+    assert result["status"] == "deleted"
+    assert result["deleted"] == 1
+    assert result["skipped_redeemed"] == 1
+    assert result["reclaimed_sats"] == 500
+    assert await get_card(active_card.id) is None
+    assert await get_card(redeemed_card.id) is not None
+
+
+@pytest.mark.anyio
+async def test_api_bulk_delete_cards_cross_wallet_forbidden():
+    """DELETE /cards/bulk returns 403 if any card belongs to another wallet."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from fastapi import HTTPException
+    from giftcards.models import BulkDeleteRequest
+    from giftcards.views_api import api_bulk_delete_cards
+
+    card = await _make_card(wallet_id="wallet_a", amount=500, status="active")
+
+    req = BulkDeleteRequest(card_ids=[card.id])
+    with pytest.raises(HTTPException) as exc_info:
+        await api_bulk_delete_cards(
+            data=req,
+            wallet=_wallet_mock("wallet_b"),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert await get_card(card.id) is not None
+
+
+@pytest.mark.anyio
+async def test_api_bulk_delete_cards_missing_card_returns_404():
+    """DELETE /cards/bulk returns 404 if any card id does not exist."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from fastapi import HTTPException
+    from giftcards.models import BulkDeleteRequest
+    from giftcards.views_api import api_bulk_delete_cards
+
+    req = BulkDeleteRequest(card_ids=["nonexistent-card-id"])
+    with pytest.raises(HTTPException) as exc_info:
+        await api_bulk_delete_cards(
+            data=req,
+            wallet=_wallet_mock("wallet_a"),
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_bulk_delete_request_validates_empty_list():
+    """BulkDeleteRequest rejects an empty card_ids list."""
+    if not IMPORTS_AVAILABLE:
+        pytest.skip(f"Imports not available: {IMPORT_ERROR}")
+
+    from giftcards.models import BulkDeleteRequest
+
+    with pytest.raises(Exception):
+        BulkDeleteRequest(card_ids=[])
+
+
+@pytest.mark.anyio
+async def test_bulk_delete_route_before_parameterized_delete():
+    """DELETE /cards/bulk is registered before DELETE /cards/{card_id}.
+
+    Starlette matches routes in the order they are added. If the
+    parameterized DELETE /{card_id} route is registered before the static
+    DELETE /bulk route, a request to /bulk is captured by /{card_id} with
+    card_id="bulk" and incorrectly returns 404 "Gift card not found".
+    """
+    from giftcards.views_api import giftcards_api_router
+
+    routes = list(giftcards_api_router.routes)
+    delete_bulk_index = None
+    delete_card_index = None
+    for i, route in enumerate(routes):
+        if hasattr(route, "path") and "DELETE" in getattr(route, "methods", []):
+            if route.path == "/api/v1/cards/bulk":
+                delete_bulk_index = i
+            elif route.path == "/api/v1/cards/{card_id}":
+                delete_card_index = i
+    assert delete_bulk_index is not None, "DELETE /cards/bulk route not found"
+    assert delete_card_index is not None, "DELETE /cards/{card_id} route not found"
+    assert delete_bulk_index < delete_card_index, (
+        "DELETE /cards/bulk must be registered before DELETE /cards/{card_id}"
+    )
+
+

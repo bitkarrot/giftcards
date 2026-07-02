@@ -25,7 +25,7 @@
 
 - [x] **DELV-01**: Gift card can be delivered to a recipient by email as a PNG image attachment.
 - [x] **DELV-02**: Email delivery includes the sender's personal message and a link to redeem the gift card.
-- [x] **DELV-03**: Gift card can be delivered to a nostr npub as a direct message containing the redemption link.
+- [ ] **DELV-03**: Gift card can be delivered to a nostr npub as a direct message containing the redemption link. *(Deferred to v2 per CONTEXT.md D-17)*
 - [x] **DELV-04**: Issuer can download a printable gift card image (PNG) for manual distribution.
 
 ### Templates (TPLT)
@@ -36,22 +36,22 @@
 
 ### Bulk Creation (BULK)
 
-- [ ] **BULK-01**: Issuer can create multiple gift cards with the same sats amount from a single form.
-- [ ] **BULK-02**: Issuer can upload a CSV file with columns for recipient name, sats amount, email address, and nostr npub to create gift cards in bulk.
-- [ ] **BULK-03**: Bulk CSV creation validates each row and reports per-row errors before creating any cards.
-- [ ] **BULK-04**: Bulk creation generates a unique redemption link and optional email/nostr delivery for each card.
+- [x] **BULK-01**: Issuer can create multiple gift cards with the same sats amount from a single form.
+- [x] **BULK-02**: Issuer can upload a CSV file with columns for recipient name, sats amount, email address, and nostr npub to create gift cards in bulk.
+- [x] **BULK-03**: Bulk CSV creation validates each row and reports per-row errors before creating any cards.
+- [x] **BULK-04**: Bulk creation generates a unique redemption link and optional email/nostr delivery for each card.
 
 ### API (API)
 
-- [ ] **API-01**: External systems can create gift cards via an authenticated REST API endpoint.
-- [ ] **API-02**: External systems can retrieve gift card status and details via an authenticated REST API endpoint.
-- [ ] **API-03**: All issuer-facing API endpoints require an LNBits admin or invoice key and are scoped to the authenticated wallet.
+- [x] **API-01**: External systems can create gift cards via an authenticated REST API endpoint.
+- [x] **API-02**: External systems can retrieve gift card status and details via an authenticated REST API endpoint.
+- [x] **API-03**: All issuer-facing API endpoints require an LNBits admin or invoice key and are scoped to the authenticated wallet.
 
 ### Dashboard (DASH)
 
-- [ ] **DASH-01**: Issuer can view a list of all gift cards they have created.
-- [ ] **DASH-02**: Issuer can filter gift cards by status (created, active, redeemed, expired, cancelled).
-- [ ] **DASH-03**: Issuer can view gift card details including status, creation date, expiration date, and redemption date.
+- [x] **DASH-01**: Issuer can view a list of all gift cards they have created.
+- [x] **DASH-02**: Issuer can filter gift cards by status (created, active, redeemed, expired). NOTE: 'cancelled' status deferred to v2 AUDT-02.
+- [x] **DASH-03**: Issuer can view gift card details including status, creation date, expiration date, and redemption date.
 
 ## v2 Requirements
 
@@ -90,21 +90,21 @@
 | REDM-05 | Phase 1 | Complete |
 | DELV-01 | Phase 2 | Complete |
 | DELV-02 | Phase 2 | Complete |
-| DELV-03 | Phase 2 | Complete |
+| DELV-03 | Phase 2 | Deferred (v2, D-17) |
 | DELV-04 | Phase 2 | Complete |
 | TPLT-01 | Phase 2 | Complete |
 | TPLT-02 | Phase 2 | Complete |
 | TPLT-03 | Phase 2 | Complete |
-| BULK-01 | Phase 3 | Pending |
-| BULK-02 | Phase 3 | Pending |
-| BULK-03 | Phase 3 | Pending |
-| BULK-04 | Phase 3 | Pending |
-| API-01 | Phase 3 | Pending |
-| API-02 | Phase 3 | Pending |
-| API-03 | Phase 3 | Pending |
-| DASH-01 | Phase 3 | Pending |
-| DASH-02 | Phase 3 | Pending |
-| DASH-03 | Phase 3 | Pending |
+| BULK-01 | Phase 3 | Complete |
+| BULK-02 | Phase 3 | Complete |
+| BULK-03 | Phase 3 | Complete |
+| BULK-04 | Phase 3 | Complete |
+| API-01 | Phase 3 | Complete |
+| API-02 | Phase 3 | Complete |
+| API-03 | Phase 3 | Complete |
+| DASH-01 | Phase 3 | Complete |
+| DASH-02 | Phase 3 | Complete ('cancelled' deferred to v2) |
+| DASH-03 | Phase 3 | Complete |
 
 **Coverage:**
 
@@ -114,5 +114,5 @@
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after Phase 1 verification — all 10 Phase 1 requirements marked Complete (Phase 2: 7 reqs, Phase 3: 10 reqs)*
+*Last updated: 2026-07-01 — synced with milestone audit: Phase 3 reqs marked Complete, DELV-03 corrected to Deferred (v2, D-17), DASH-02 'cancelled' scope reduction noted.*
 *Post-session update: 2026-06-29 — Architecture changed to no per-card wallets (withdraw extension pattern). raw_token now stored in DB (migration m002) for redemption_url reconstruction. GCARD-05 still satisfied: issuer wallet debited at creation time.*

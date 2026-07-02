@@ -1,15 +1,16 @@
 ---
 phase: 02-branded-delivery
 verified: 2026-06-30T04:35:00Z
-status: passed
-score: 14/14 must-haves verified (automated); 6 items require human testing
+reverified: 2026-07-01T05:20:00Z
+status: human_needed
+score: 14/14 must-haves verified (automated); 9 items require human testing
 behavior_unverified: 0
 overrides_applied: 0
 deferred: 1 (DELV-03 — nostr delivery, authorized per CONTEXT.md D-17)
 scope_adjustments: 2 (D-11/D-12 magic link flow replaces literal PNG attachment; claim page link replaces direct redemption link in email)
 tests:
-  total: 185
-  passed: 185
+  total: 228
+  passed: 228
   failed: 0
   files:
 
@@ -21,22 +22,37 @@ tests:
     - test_redemption.py (11 tests — Phase 1 regression)
     - test_expiry.py (7 tests — Phase 1 regression)
     - test_security.py (5 tests — Phase 1 regression)
+    - test_bulk_creation.py (8 tests — Phase 3 regression)
+    - test_csv_upload.py (12 tests — Phase 3 regression)
+    - test_card_management.py (8 tests — Phase 3 regression)
+    - test_dashboard.py (10 tests — Phase 3 regression)
+    - test_invoice_key_security.py (5 tests — Phase 2/3 regression)
 
 human_verification:
 
   - test: "Open the create dialog in a browser and interact with the card designer — drag QR, drag text, resize QR, change font/size/color/alignment, select portrait/landscape/custom upload."
-    expected: "All drag/resize/styling controls respond smoothly; QR cannot be resized below 150px; custom upload triggers file picker and loads image as preview background."
+    expected: "All drag/resize/styling controls respond smoothly; QR cannot be resized below 150px; custom upload triggers file picker and loads image as preview background. An info banner explains drag/resize interactions."
     why_human: "Interactive pointer-event drag behavior and visual preview rendering cannot be verified by automated tests."
     status: PENDING
 
-  - test: "Create a card with a design config and open the redemption page in a browser."
-    expected: "The branded card image (template + QR + text) renders on the redemption page; Phase 1 cards without design show the bare QR fallback."
+  - test: "Select Portrait or Landscape template and pick a background color using the color picker."
+    expected: "The card preview shows a solid background color instead of the template image. The bg_color is persisted and the server-rendered card image uses the solid color fill."
+    why_human: "Visual color rendering in both client preview and server-side Pillow render requires manual browser verification."
+    status: PENDING
+
+  - test: "Create a card with a design config (including bg_color) and open the redemption page in a browser."
+    expected: "The branded card image (with bg_color fill + QR + text) renders on the redemption page; Phase 1 cards without design show the bare QR fallback."
     why_human: "Visual rendering of the Pillow-composited branded card image requires manual browser verification."
     status: PENDING
 
   - test: "Click 'Download PNG' in the card list expanded row."
     expected: "A 3x-resolution PNG file downloads with filename giftcard_{card_id}.png."
     why_human: "File download behavior and image quality require manual verification."
+    status: PENDING
+
+  - test: "Open the 'Send Gift Card Email' dialog, select 'Fancy HTML Template' mode, and pick a background color."
+    expected: "A background color picker appears in fancy mode. The email preview updates live with the chosen color (header, message border, CTA button). The sent email uses the chosen bg_color."
+    why_human: "Interactive color picker and live preview rendering require manual browser verification; email content verification requires SMTP."
     status: PENDING
 
   - test: "Visit /giftcards/claim, enter an email, and verify the full magic link flow end-to-end with SMTP configured."
@@ -53,6 +69,11 @@ human_verification:
     expected: "Magic link shows 'Link Invalid or Expired' — invalidated after redemption (D-16)."
     why_human: "Post-redemption invalidation requires end-to-end testing with a real redemption."
     status: PENDING
+
+  - test: "Verify the card design section layout in all dialogs (create, bulk same-amount, bulk CSV, edit)."
+    expected: "The card design section uses a single-column layout — preview and controls stack vertically, no elements are cut off. An info banner below the 'Card Design' heading explains drag/resize."
+    why_human: "Layout rendering and responsive behavior in narrow dialog windows require manual browser verification."
+    status: PENDING
 post_session_changes:
 
   - "Security hardening commit 6ce6b20: 4 HIGH severity issues found and fixed (H-1 path traversal, H-2 TOCTOU race on magic link, H-3 stale recipient email, H-4 SMTP exception leakage). 22 regression tests added in test_security_fixes.py."
@@ -60,6 +81,10 @@ post_session_changes:
   - "M-2: Claim endpoint uses asyncio.create_task for SMTP send to prevent timing-based email enumeration (D-14)."
   - "M-6: Hex color validation on DesignConfig.font_color to prevent public render endpoint 500 on junk input."
   - "DesignConfig validators added for qr_size (>= 150), fractions (0.0-1.0), text_align (allowlist)."
+  - "POST-SESSION (2026-07-01): bg_color added to DesignConfig and CSVRow with hex color validation. Server-side renderer applies solid color fill for Portrait/Landscape templates when bg_color is set."
+  - "POST-SESSION (2026-07-01): Email background color — DeliverRequest accepts optional bg_color, fancy.html template uses {{ bg_color }} variable (default #1976d2) for header, message border, and CTA button."
+  - "POST-SESSION (2026-07-01): Card design section layout changed to single-column (col-12) in all dialogs to prevent elements being cut off in narrow dialog windows."
+  - "POST-SESSION (2026-07-01): Info banner added to all card design sections explaining drag/resize interactions."
 
 ---
 
@@ -69,7 +94,7 @@ post_session_changes:
 
 **Verified:** 2026-06-30T04:35:00Z
 
-**Status:** human_needed — all automated checks pass (185/185 tests); 6 items require manual browser/SMTP testing
+**Status:** human_needed — all automated checks pass (228/228 tests); 9 items require manual browser/SMTP testing
 
 ## Scope Adjustments (Authorized per CONTEXT.md)
 
@@ -85,7 +110,7 @@ post_session_changes:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | An issuer can create a gift card with a template selection, QR position, and text styling config, and the branded card image is rendered server-side with Pillow. | ✓ VERIFIED | `DesignConfig` model (`models.py:21-78`) with template_name, qr_x_frac, qr_y_frac, qr_size, text_x_frac, text_y_frac, font_family, font_size, font_color, text_align. `create_gift_card` (`services.py:39-133`) serializes design into qr_config/text_config JSON columns. `render_card_image` (`services.py:334-352`) calls `_render_card_image_sync` via `asyncio.to_thread()`. |
+| 1 | An issuer can create a gift card with a template selection, QR position, and text styling config, and the branded card image is rendered server-side with Pillow. | ✓ VERIFIED | `DesignConfig` model (`models.py:21-78`) with template_name, qr_x_frac, qr_y_frac, qr_size, text_x_frac, text_y_frac, font_family, font_size, font_color, text_align, **bg_color**. `create_gift_card` (`services.py:39-133`) serializes design (including bg_color) into qr_config/text_config JSON columns. `render_card_image` (`services.py:334-352`) calls `_render_card_image_sync` via `asyncio.to_thread()`. **Post-session:** bg_color validator added to DesignConfig; `_hex_to_rgba` helper converts hex to RGBA for Pillow; renderer applies solid color fill for Portrait/Landscape when bg_color is set. |
 | 2 | The branded card image shows the sats amount, recipient name, and sender message on the chosen template with the QR code at the issuer-specified position. | ✓ VERIFIED | `_render_card_image_sync` (`services.py:267-331`) draws `text_lines = [f"{card.amount} sats", f"For: {card.recipient_name}", card.message]` and pastes QR at `(int(design.qr_x_frac * template.width), int(design.qr_y_frac * template.height))`. |
 | 3 | A recipient opening the redemption page sees the branded card image (with embedded QR) when a design config was set; Phase 1 cards without design config show the bare QR fallback. | ✓ VERIFIED | `redeem.vue:54-72` — `v-if="giftCard.has_design"` shows `img.branded-card-img` with `:src="cardImageUrl"`; `v-if="!giftCard.has_design"` shows bare QR. `api_get_public_card` (`views_api.py:118`) returns `has_design=card.template_name is not None or card.template_asset_id is not None`. `redeem.js:17-21` computes `cardImageUrl`. |
 | 4 | An issuer can download a printable PNG of the branded card image at 3x resolution from the card list. | ✓ VERIFIED | `api_card_print` (`views_api.py:262-289`) — `GET /{card_id}/print`, authenticated via `require_admin_key`, calls `render_card_image(card, lnurl_url, scale=3)`, returns `StreamingResponse` with `Content-Disposition: attachment; filename="giftcard_{card_id}.png"`. `downloadPrintable` method (`index.js:317-340`) uses fetch+blob download. "Download PNG" button in `index.vue:143-153`. |
@@ -95,7 +120,7 @@ post_session_changes:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | An issuer can interactively design a gift card in the create dialog by selecting a template, dragging the QR code, dragging the text block, and choosing font family, font size, font color, and text alignment. | ✓ VERIFIED | `index.vue:268-376` — Card Design section with `q-select` for template, `div.card-preview` with `div.draggable-qr` and `div.draggable-text`, `q-select` for font, `q-slider` for font size (12-72), `q-input type="color"` for font color, `q-btn-toggle` for alignment. Drag methods: `startDrag`, `onDrag`, `endDrag` (`index.js:378-407`). |
+| 1 | An issuer can interactively design a gift card in the create dialog by selecting a template, dragging the QR code, dragging the text block, and choosing font family, font size, font color, text alignment, and background color. | ✓ VERIFIED | `index.vue:268-376` — Card Design section with `q-select` for template, `div.card-preview` with `div.draggable-qr` and `div.draggable-text`, `q-select` for font, `q-slider` for font size (12-72), `q-input type="color"` for font color, `q-btn-toggle` for alignment, `q-input type="color"` for bg_color (visible when bgColorEnabled — Portrait/Landscape only). Drag methods: `startDrag`, `onDrag`, `endDrag` (`index.js:378-407`). **Post-session:** Info banner added explaining drag/resize; layout changed to single-column (col-12). |
 | 2 | The issuer can resize the QR code by dragging a corner handle, but the QR cannot be made smaller than 150px. | ✓ VERIFIED | `div.resize-handle` in `index.vue:316-321` with `@pointerdown.stop="startResize"`. `onResize` (`index.js:420-425`) — `Math.max(this.minQrSize, this.resizeState.origSize + dx)` with `minQrSize=150` (`index.js:39`). Server-side clamping also in `_render_card_image_sync`: `max(150, design.qr_size) * scale` (`services.py:294`). |
 | 3 | The issuer can upload a custom template image via the LNBits asset system, and it appears as the preview background. | ✓ VERIFIED | `handleTemplateSelected` (`index.js:453-483`) validates dimensions (D-03: max 1500x2000px via `_getImageDimensions`), calls `uploadAssetFile` (`index.js:501-512`) which POSTs `FormData` to `/api/v1/assets?public_asset=true`, stores `asset_id` in `templateAssetId`, sets `templateUrl` to `/api/v1/assets/${assetId}/data`. |
 | 4 | The preview is rendered entirely client-side (no server round-trips during drag); the final PNG is rendered server-side only on submit. | ✓ VERIFIED | Drag/resize handlers (`onDrag`, `onResize`) only update reactive state (`qrX`, `qrY`, `qrSize`, `textX`, `textY`) — no API calls. `createGiftCard` (`index.js:213-252`) sends design config to server on submit. |
@@ -111,7 +136,7 @@ post_session_changes:
 | 4 | Magic link tokens are generated with secrets.token_urlsafe(32) and stored as SHA-256 hashes only; raw tokens are never stored in the database. | ✓ VERIFIED | `create_magic_link` (`crud.py:145-146`) — `magic_token = secrets.token_urlsafe(32)`, `token_hash = hashlib.sha256(magic_token.encode()).hexdigest()`. Only `token_hash` stored in `MagicLink` model. `generate_magic_link` (`services.py:30-36`) delegates to `create_magic_link`. |
 | 5 | Magic links are rate-limited to 3 requests per email per hour (DB-backed, checked before generating a link). | ✓ VERIFIED | `count_recent_magic_links` (`crud.py:213-222`) — `SELECT COUNT(*) FROM giftcards.magic_links WHERE email = :email AND created_at > :cutoff` (cutoff = now - 3600). `api_claim_cards` (`views_api.py:360-362`) — `if count >= 3: raise HTTPException(429)`. Checked BEFORE generating a link. |
 | 6 | Magic links are invalidated after a card is redeemed (delete magic_links rows for that email). | ✓ VERIFIED | `lnurl_callback` (`views_api.py:184-187`) — after `await mark_redeemed(card.id)`, calls `await invalidate_magic_links_for_email(card.recipient_email)` if `card.recipient_email` is set. `invalidate_magic_links_for_email` (`crud.py:183-188`) — `DELETE FROM giftcards.magic_links WHERE email = :email`. |
-| 7 | Email delivery supports two modes: custom text (issuer writes subject + body) and fancy HTML (Jinja2 template with branding). Both modes include the claim page URL, not the raw redemption link. | ✓ VERIFIED | `send_gift_card_email` (`services.py:451-503`) — `if email_mode == "fancy"` renders `fancy.html` with sender_name, message, claim_url, amount; else renders `custom_text.html` with body, claim_url. Both use `claim_url` (not raw redemption link per D-12). `emailModeOptions` in `index.js:112-117` — Custom Text / Fancy HTML Template. |
+| 7 | Email delivery supports two modes: custom text (issuer writes subject + body) and fancy HTML (Jinja2 template with branding). Both modes include the claim page URL, not the raw redemption link. Fancy mode supports a customizable background color. | ✓ VERIFIED | `send_gift_card_email` (`services.py:451-503`) — `if email_mode == "fancy"` renders `fancy.html` with sender_name, message, claim_url, amount, **bg_color** (default #1976d2); else renders `custom_text.html` with body, claim_url. Both use `claim_url` (not raw redemption link per D-12). `emailModeOptions` in `index.js:112-117` — Custom Text / Fancy HTML Template. **Post-session:** DeliverRequest accepts optional bg_color with hex validation; fancy.html uses {{ bg_color }} for header, message border, and CTA button; email dialog has color picker in fancy mode with live preview. |
 | 8 | Email delivery status is tracked on the card record (not_sent / sent / failed) and visible in the card list. | ✓ VERIFIED | `update_card_email_status` (`crud.py:111-120`) — `UPDATE giftcards.cards SET email_status = :status`. `send_gift_card_email` calls `update_card_email_status(card.id, "sent")` on success, `"failed"` on exception (`services.py:499-502`). Delivery column in card list (Truth 5 above). |
 
 **Score:** 14/14 truths verified by automated tests and code inspection.
@@ -140,9 +165,9 @@ post_session_changes:
 | `giftcards/static/fonts/DejaVuSerif.ttf` | Serif font | ✓ VERIFIED | File exists (380,660 bytes). |
 | `giftcards/static/fonts/DejaVuSansMono.ttf` | Monospace font | ✓ VERIFIED | File exists (343,140 bytes). |
 | `giftcards/static/email_templates/notification.html` | Magic link notification template | ✓ VERIFIED | Contains `{{ sender_name }}`, `{{ magic_link_url }}`, `{{ claim_url }}`. No raw_token or card image (D-12). |
-| `giftcards/static/email_templates/fancy.html` | Branded HTML email template | ✓ VERIFIED | Contains `{{ sender_name }}`, `{{ message }}`, `{{ claim_url }}`, `{{ amount }}`. Inline CSS for email client compatibility. |
+| `giftcards/static/email_templates/fancy.html` | Branded HTML email template | ✓ VERIFIED | Contains `{{ sender_name }}`, `{{ message }}`, `{{ claim_url }}`, `{{ amount }}`, `{{ bg_color }}`. Inline CSS for email client compatibility. **Post-session:** bg_color variable replaces hardcoded #1976d2 in header, message border, and CTA button. |
 | `giftcards/static/email_templates/custom_text.html` | Custom text email wrapper | ✓ VERIFIED | Contains `{{ body }}` with `white-space: pre-wrap`, `{{ claim_url }}`. |
-| `giftcards/tests/` | Test suite | ✓ VERIFIED | 185 tests pass across 8 test files. |
+| `giftcards/tests/` | Test suite | ✓ VERIFIED | 228 tests pass across 13 test files (Phase 1-3 regression). |
 
 ## Key Link Verification
 
@@ -258,11 +283,14 @@ post_session_changes:
 
 ## Gaps Summary
 
-No automated gaps remain in the implementation. All 6 in-scope requirements (TPLT-01, TPLT-02, TPLT-03, DELV-01, DELV-02, DELV-04) are satisfied by the code, and the full test suite (185 tests) passes. DELV-03 (nostr) is authorized-deferred per CONTEXT.md D-17. The 2 scope adjustments (magic link flow instead of literal PNG attachment, claim page link instead of direct redemption link) are authorized per CONTEXT.md D-11/D-12 and represent security improvements (bearer token never sent in email).
+No automated gaps remain in the implementation. All 6 in-scope requirements (TPLT-01, TPLT-02, TPLT-03, DELV-01, DELV-02, DELV-04) are satisfied by the code, and the full test suite (228 tests) passes. DELV-03 (nostr) is authorized-deferred per CONTEXT.md D-17. The 2 scope adjustments (magic link flow instead of literal PNG attachment, claim page link instead of direct redemption link) are authorized per CONTEXT.md D-11/D-12 and represent security improvements (bearer token never sent in email).
 
-The only remaining verification is human: interactive card designer UX, visual branded card rendering, printable PNG download, end-to-end email delivery with configured SMTP, rate limiting behavior, and post-redemption magic link invalidation.
+Post-session additions (2026-07-01): bg_color for card templates, email background color for fancy HTML mode, single-column card design layout, and drag/resize info banner are implemented and verified by automated tests (model validation, template rendering, DB round-trip). Visual verification of these features is included in the 9 pending human UAT items.
+
+The only remaining verification is human: interactive card designer UX (including bg_color), visual branded card rendering with bg_color, printable PNG download, email bg_color picker and live preview, end-to-end email delivery with configured SMTP, rate limiting behavior, post-redemption magic link invalidation, and card design layout verification.
 
 ---
 
 _Verified: 2026-06-30T04:35:00Z_
+_Reverified: 2026-07-01T05:20:00Z_
 _Verifier: Claude (gsd-verifier)_

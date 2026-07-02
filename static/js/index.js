@@ -17,7 +17,8 @@ window.PageGiftCards = {
           recipient_name: '',
           sender_name: '',
           message: '',
-          expires_at: null
+          expires_at: null,
+          designMode: 'none'
         },
         result: null
       },
@@ -33,6 +34,7 @@ window.PageGiftCards = {
       selectedFont: 'DejaVuSans',
       fontSize: 24,
       fontColor: '#000000',
+      bgColor: '#ebedf5',
       textAlign: 'left',
       showAmount: true,
       showRecipient: true,
@@ -45,6 +47,7 @@ window.PageGiftCards = {
       dragState: null,
       resizeState: null,
       isUploadingTemplate: false,
+      designLoaded: false,
       // Email delivery dialog
       emailDialog: {
         show: false,
@@ -55,7 +58,8 @@ window.PageGiftCards = {
           email_mode: 'custom',
           subject: '',
           body: '',
-          template: 'notification'
+          template: 'notification',
+          bg_color: '#1976d2'
         }
       },
       // Bulk create dialog
@@ -96,9 +100,19 @@ window.PageGiftCards = {
         dateTo: null,
         dateRangeLabel: ''
       },
+      dateRange: null,
       // Multi-select (D-14)
       selectedCards: [],
       bulkEmailLoading: false,
+      // Bulk email confirmation dialog
+      bulkEmailDialog: {
+        show: false,
+        loading: false,
+        scope: 'filtered',
+        cards: [],
+        selected: [],
+        skipped: 0
+      },
       // Card edit dialog
       editDialog: {
         show: false,
@@ -108,7 +122,8 @@ window.PageGiftCards = {
           recipient_name: '',
           sender_name: '',
           message: '',
-          recipient_email: ''
+          recipient_email: '',
+          designMode: 'none'
         }
       },
       // Delete confirmation dialog
@@ -116,6 +131,14 @@ window.PageGiftCards = {
         show: false,
         loading: false,
         card: null
+      },
+      // Bulk delete confirmation dialog
+      bulkDeleteDialog: {
+        show: false,
+        loading: false,
+        count: 0,
+        activeAmount: 0,
+        cardIds: []
       }
     }
   },
@@ -176,6 +199,18 @@ window.PageGiftCards = {
     anyTextShown() {
       return this.showAmount || this.showRecipient || this.showMessage
     },
+    bgColorEnabled() {
+      // Background color only applies to the bundled portrait/landscape
+      // templates (custom uploads define their own background image).
+      return this.selectedTemplate === 'portrait' || this.selectedTemplate === 'landscape'
+    },
+    cardPreviewStyle() {
+      const style = {width: this.previewWidth + 'px', height: this.previewHeight + 'px'}
+      if (this.bgColorEnabled) {
+        style.backgroundColor = this.bgColor
+      }
+      return style
+    },
     previewScale() {
       if (!this.actualTemplateWidth) return 1
       return this.previewWidth / this.actualTemplateWidth
@@ -210,6 +245,18 @@ window.PageGiftCards = {
         textAlign: alignMap[this.textAlign] || 'left',
         lineHeight: '1.3'
       }
+    },
+    previewTextTransform() {
+      // Match the server-side Pillow anchor behavior:
+      //   left   → "la" (left-anchored, no shift)
+      //   center → "ma" (middle-anchored, shift left by 50%)
+      //   right  → "ra" (right-anchored, shift left by 100%)
+      // Without this transform, the preview positions the LEFT EDGE of the
+      // text at textX, but the server draws the text anchored at the
+      // center/right point — causing a positional mismatch.
+      if (this.textAlign === 'center') return 'translateX(-50%)'
+      if (this.textAlign === 'right') return 'translateX(-100%)'
+      return 'none'
     },
     bulkSubmitLabel() {
       if (this.bulkDialog.activeTab === 'csv') {
@@ -268,10 +315,10 @@ window.PageGiftCards = {
       return [...validRows, ...errorRows].sort((a, b) => a.rowIndex - b.rowIndex)
     },
     statusFilterOptions() {
-      // D-12: status dropdown options. 'cancelled' is NOT included since
-      // no Phase 3 operation produces it (deferred to v2 AUDT-02).
+      // Status dropdown options. 'created' is NOT included — cards are
+      // created with status='active' immediately, so no card ever has
+      // status='created'. 'cancelled' is deferred to v2 AUDT-02.
       return [
-        {label: 'Created', value: 'created'},
         {label: 'Active', value: 'active'},
         {label: 'Redeemed', value: 'redeemed'},
         {label: 'Expired', value: 'expired'}
@@ -352,7 +399,8 @@ window.PageGiftCards = {
         recipient_name: '',
         sender_name: '',
         message: '',
-        expires_at: null
+        expires_at: null,
+        designMode: 'none'
       }
       this.createDialog.result = null
       // Reset card designer to defaults
@@ -367,6 +415,7 @@ window.PageGiftCards = {
       this.selectedFont = 'DejaVuSans'
       this.fontSize = 24
       this.fontColor = '#000000'
+      this.bgColor = '#ebedf5'
       this.textAlign = 'left'
       this.showAmount = true
       this.showRecipient = true
@@ -383,26 +432,10 @@ window.PageGiftCards = {
       this.createDialog.loading = true
       try {
         const wallet = this.g.user.wallets.find(w => w.id === this.createDialog.data.wallet)
-        // Build design config with normalized fractions
-        const designConfig = {
-          template_asset_id: this.templateAssetId,
-          template_name: this.selectedTemplate,
-          qr_x_frac: this.qrX / this.previewWidth,
-          qr_y_frac: this.qrY / this.previewHeight,
-          qr_size: this.qrSize,
-          text_x_frac: this.textX / this.previewWidth,
-          text_y_frac: this.textY / this.previewHeight,
-          font_family: this.selectedFont,
-          font_size: this.fontSize,
-          font_color: this.fontColor,
-          text_align: this.textAlign,
-          show_amount: this.showAmount,
-          show_recipient: this.showRecipient,
-          show_message: this.showMessage
-        }
+        const { designMode, ...cardData } = this.createDialog.data
         const payload = {
-          ...this.createDialog.data,
-          design: designConfig
+          ...cardData,
+          design: designMode === 'shared' ? this.buildDesignConfig() : null
         }
         const response = await LNbits.api.request(
           'POST',
@@ -412,10 +445,10 @@ window.PageGiftCards = {
         )
         
         this.createDialog.result = response.data
-        this.loadGiftCards()
+        await this.loadGiftCards()
         this.loadWalletBalance() // Refresh balance
         
-        LNbits.utils.notify('Gift card created successfully!', 'positive')
+        Quasar.Notify.create({ message: 'Gift card created successfully!', type: 'positive' })
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
@@ -426,7 +459,7 @@ window.PageGiftCards = {
     async copyLink(giftCard) {
       if (giftCard.redemption_url) {
         await this.copyToClipboard(giftCard.redemption_url)
-        LNbits.utils.notify('Link copied to clipboard', 'positive')
+        Quasar.Notify.create({ message: 'Link copied to clipboard', type: 'positive' })
       }
     },
 
@@ -491,7 +524,7 @@ window.PageGiftCards = {
     async downloadPrintable(card) {
       try {
         const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
-        const url = `/giftcards/api/v1/cards/${card.id}/print`
+        const url = `/giftcards/api/v1/cards/${card.id}/print?t=` + Date.now()
         const response = await fetch(url, {
           headers: { 'X-Api-Key': wallet.adminkey }
         })
@@ -507,7 +540,7 @@ window.PageGiftCards = {
         a.click()
         document.body.removeChild(a)
         window.URL.revokeObjectURL(downloadUrl)
-        LNbits.utils.notify('Gift card image downloaded', 'positive')
+        Quasar.Notify.create({ message: 'Gift card image downloaded', type: 'positive' })
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       }
@@ -523,7 +556,7 @@ window.PageGiftCards = {
         cards = this.giftCards
       }
       if (cards.length === 0) {
-        LNbits.utils.notify('No gift cards to export', 'warning')
+        Quasar.Notify.create({ message: 'No gift cards to export', type: 'warning' })
         return
       }
 
@@ -561,7 +594,7 @@ window.PageGiftCards = {
       a.click()
       window.URL.revokeObjectURL(url)
 
-      LNbits.utils.notify('CSV exported successfully', 'positive')
+      Quasar.Notify.create({ message: 'CSV exported successfully', type: 'positive' })
     },
 
     // ----- Card Designer: drag interaction -----
@@ -668,14 +701,11 @@ window.PageGiftCards = {
       try {
         dims = await this._getImageDimensions(file)
         if (dims.width > 1500 || dims.height > 2000) {
-          LNbits.utils.notify(
-            'Template image too large. Maximum dimensions are 1500x2000px.',
-            'negative'
-          )
+          Quasar.Notify.create({ message: 'Template image too large. Maximum dimensions are 1500x2000px.', type: 'negative' })
           return
         }
       } catch (err) {
-        LNbits.utils.notify('Could not read image file.', 'negative')
+        Quasar.Notify.create({ message: 'Could not read image file.', type: 'negative' })
         return
       }
 
@@ -696,7 +726,7 @@ window.PageGiftCards = {
           this.previewHeight = maxPreview
           this.previewWidth = Math.round(maxPreview * dims.width / dims.height)
         }
-        LNbits.utils.notify('Custom template uploaded', 'positive')
+        Quasar.Notify.create({ message: 'Custom template uploaded', type: 'positive' })
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
@@ -748,7 +778,8 @@ window.PageGiftCards = {
         email_mode: 'custom',
         subject: `You have a gift card from ${card.sender_name || 'Anonymous'}`,
         body: '',
-        template: 'notification'
+        template: 'notification',
+        bg_color: '#1976d2'
       }
       this.emailDialog.show = true
     },
@@ -756,7 +787,7 @@ window.PageGiftCards = {
     async sendEmail() {
       if (!this.emailDialog.card) return
       if (!this.isValidEmail(this.emailDialog.data.recipient_email)) {
-        LNbits.utils.notify('Enter a valid email address.', 'negative')
+        Quasar.Notify.create({ message: 'Enter a valid email address.', type: 'negative' })
         return
       }
       this.emailDialog.loading = true
@@ -770,8 +801,8 @@ window.PageGiftCards = {
           this.emailDialog.data
         )
         this.emailDialog.show = false
-        LNbits.utils.notify('Email sent successfully', 'positive')
-        this.loadGiftCards()
+        Quasar.Notify.create({ message: 'Email sent successfully', type: 'positive' })
+        await this.loadGiftCards()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
@@ -811,6 +842,7 @@ window.PageGiftCards = {
       this.selectedFont = 'DejaVuSans'
       this.fontSize = 24
       this.fontColor = '#000000'
+      this.bgColor = '#ebedf5'
       this.textAlign = 'left'
       this.showAmount = true
       this.showRecipient = true
@@ -830,22 +862,7 @@ window.PageGiftCards = {
           // CSV mode — post validated rows to /cards/bulk
           let design = null
           if (this.bulkDialog.csvData.designMode === 'shared') {
-            design = {
-              template_asset_id: this.templateAssetId,
-              template_name: this.selectedTemplate,
-              qr_x_frac: this.qrX / this.previewWidth,
-              qr_y_frac: this.qrY / this.previewHeight,
-              qr_size: this.qrSize,
-              text_x_frac: this.textX / this.previewWidth,
-              text_y_frac: this.textY / this.previewHeight,
-              font_family: this.selectedFont,
-              font_size: this.fontSize,
-              font_color: this.fontColor,
-              text_align: this.textAlign,
-              show_amount: this.showAmount,
-              show_recipient: this.showRecipient,
-              show_message: this.showMessage
-            }
+            design = this.buildDesignConfig()
           }
           const payload = {
             rows: this.bulkDialog.csvRows,
@@ -860,29 +877,14 @@ window.PageGiftCards = {
           )
           this.bulkDialog.show = false
           const count = this.bulkDialog.csvRows.length
-          LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
-          this.loadGiftCards()
+          Quasar.Notify.create({ message: count + ' gift cards created successfully!', type: 'positive' })
+          this.clearFilters()
           this.loadWalletBalance()
         } else {
           // Same-amount mode — existing behavior
           let design = null
           if (this.bulkDialog.sameData.designMode === 'shared') {
-            design = {
-              template_asset_id: this.templateAssetId,
-              template_name: this.selectedTemplate,
-              qr_x_frac: this.qrX / this.previewWidth,
-              qr_y_frac: this.qrY / this.previewHeight,
-              qr_size: this.qrSize,
-              text_x_frac: this.textX / this.previewWidth,
-              text_y_frac: this.textY / this.previewHeight,
-              font_family: this.selectedFont,
-              font_size: this.fontSize,
-              font_color: this.fontColor,
-              text_align: this.textAlign,
-              show_amount: this.showAmount,
-              show_recipient: this.showRecipient,
-              show_message: this.showMessage
-            }
+            design = this.buildDesignConfig()
           }
           const payload = {
             count: this.bulkDialog.sameData.count,
@@ -902,8 +904,8 @@ window.PageGiftCards = {
 
           this.bulkDialog.show = false
           const count = this.bulkDialog.sameData.count
-          LNbits.utils.notify(count + ' gift cards created successfully!', 'positive')
-          this.loadGiftCards()
+          Quasar.Notify.create({ message: count + ' gift cards created successfully!', type: 'positive' })
+          this.clearFilters()
           this.loadWalletBalance()
         }
       } catch (error) {
@@ -919,7 +921,7 @@ window.PageGiftCards = {
       if (!file) return
       const filename = file.name || ''
       if (!filename.toLowerCase().endsWith('.csv')) {
-        LNbits.utils.notify('Please select a CSV file.', 'negative')
+        Quasar.Notify.create({ message: 'Please select a CSV file.', type: 'negative' })
         return
       }
       this.bulkDialog.csvParsing = true
@@ -974,9 +976,11 @@ window.PageGiftCards = {
           wallet.adminkey
         )
         this.detailDialog.card = response.data
-        // Set card image URL if the card has a design (public image endpoint)
-        if (card.token_hash) {
-          this.detailDialog.cardImageUrl = '/giftcards/api/v1/cards/' + card.token_hash + '/image'
+        // Set card image URL if the card has a token_hash (public image endpoint).
+        // Append a cache-busting timestamp so the browser always fetches a
+        // fresh image (the design may have been updated since the last view).
+        if (response.data.token_hash) {
+          this.detailDialog.cardImageUrl = '/giftcards/api/v1/cards/' + response.data.token_hash + '/image?t=' + Date.now()
         }
       } catch (error) {
         // Full detail fetch failed — keep the summary card data already set
@@ -984,7 +988,7 @@ window.PageGiftCards = {
       }
     },
 
-    openEditDialog(card) {
+    async openEditDialog(card) {
       this.editDialog.card = card
       this.editDialog.data = {
         recipient_name: card.recipient_name || '',
@@ -992,7 +996,116 @@ window.PageGiftCards = {
         message: card.message || '',
         recipient_email: card.recipient_email || ''
       }
+      // Reset card designer to defaults, then override with the card's
+      // existing design config (fetched from the detail endpoint which
+      // returns the parsed DesignConfig).
+      this.resetCardDesigner()
+      this.editDialog.data.designMode = 'none'
+      this.designLoaded = false
       this.editDialog.show = true
+      try {
+        const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
+        const response = await LNbits.api.request(
+          'GET',
+          '/giftcards/api/v1/cards/' + card.id,
+          wallet.adminkey
+        )
+        const detail = response.data
+        if (detail && detail.design) {
+          this.applyDesignToDesigner(detail.design)
+          this.editDialog.data.designMode = 'shared'
+        }
+        this.designLoaded = true
+      } catch (error) {
+        console.error('Failed to load card design for edit:', error)
+        Quasar.Notify.create({ message: 'Could not load card design — only metadata will be saved.', type: 'warning' })
+      }
+    },
+
+    resetCardDesigner() {
+      this.selectedTemplate = 'portrait'
+      this.templateAssetId = null
+      this.templateUrl = '/giftcards/static/image/template_portrait.png'
+      this.qrX = 21
+      this.qrY = 228
+      this.qrSize = 150
+      this.textX = 21
+      this.textY = 33
+      this.selectedFont = 'DejaVuSans'
+      this.fontSize = 24
+      this.fontColor = '#000000'
+      this.bgColor = '#ebedf5'
+      this.textAlign = 'left'
+      this.showAmount = true
+      this.showRecipient = true
+      this.showMessage = true
+      this.previewWidth = 212
+      this.previewHeight = 325
+      this.actualTemplateWidth = 425
+      this.actualTemplateHeight = 650
+      this.dragState = null
+      this.resizeState = null
+    },
+
+    applyDesignToDesigner(design) {
+      // Set template + dimensions first so fraction→pixel math is correct.
+      if (design.template_name && design.template_name !== 'custom') {
+        this.selectedTemplate = design.template_name
+        this.onTemplateChange(design.template_name)
+      } else if (design.template_name === 'custom') {
+        this.selectedTemplate = 'custom'
+        // Restore the custom template preview from the asset ID so the
+        // preview shows the actual uploaded image and dimensions are
+        // available for fraction math (CR-002).
+        this.templateAssetId = design.template_asset_id || null
+        if (design.template_asset_id) {
+          this.templateUrl = '/api/v1/assets/' + design.template_asset_id + '/data'
+        }
+        // Custom template dimensions are not stored in the design config,
+        // so we keep the portrait defaults from resetCardDesigner(). The
+        // QR/text fractions will be approximate until the user re-uploads
+        // or the asset dimensions are fetched. This is acceptable because
+        // custom templates are an advanced workflow and the fractions are
+        // still relative to the preview area.
+      } else {
+        this.templateAssetId = design.template_asset_id || null
+      }
+      // QR position (stored as fractions → convert to preview pixels)
+      this.qrX = Math.round((design.qr_x_frac || 0.1) * this.previewWidth)
+      this.qrY = Math.round((design.qr_y_frac || 0.7) * this.previewHeight)
+      this.qrSize = design.qr_size || 150
+      // Text position
+      this.textX = Math.round((design.text_x_frac || 0.1) * this.previewWidth)
+      this.textY = Math.round((design.text_y_frac || 0.1) * this.previewHeight)
+      // Text styling
+      this.selectedFont = design.font_family || 'DejaVuSans'
+      this.fontSize = design.font_size || 24
+      this.fontColor = design.font_color || '#000000'
+      this.bgColor = design.bg_color || '#ebedf5'
+      this.textAlign = design.text_align || 'left'
+      this.showAmount = design.show_amount !== false
+      this.showRecipient = design.show_recipient !== false
+      this.showMessage = design.show_message !== false
+    },
+
+    buildDesignConfig() {
+      return {
+        template_asset_id: this.templateAssetId,
+        template_name: this.selectedTemplate,
+        qr_x_frac: this.qrX / this.previewWidth,
+        qr_y_frac: this.qrY / this.previewHeight,
+        qr_size: this.qrSize,
+        text_x_frac: this.textX / this.previewWidth,
+        text_y_frac: this.textY / this.previewHeight,
+        font_family: this.selectedFont,
+        font_size: this.fontSize,
+        font_color: this.fontColor,
+        bg_color: this.bgColor,
+        text_align: this.textAlign,
+        show_amount: this.showAmount,
+        show_recipient: this.showRecipient,
+        show_message: this.showMessage
+      }
     },
 
     async saveCardEdit() {
@@ -1001,15 +1114,27 @@ window.PageGiftCards = {
       try {
         const wallet = this.g.user.wallets.find(w => w.id === this.editDialog.card.wallet) || this.g.user.wallets[0]
         const url = '/giftcards/api/v1/cards/' + this.editDialog.card.id
+        const { designMode, ...editData } = this.editDialog.data
+        const payload = { ...editData }
+        // Only send design if it was successfully loaded from the server.
+        // If the fetch failed, sending default design values would silently
+        // overwrite the card's actual design (CR-001).
+        if (this.designLoaded) {
+          if (designMode === 'shared') {
+            payload.design = this.buildDesignConfig()
+          } else {
+            payload.clear_design = true
+          }
+        }
         await LNbits.api.request(
           'PUT',
           url,
           wallet.adminkey,
-          this.editDialog.data
+          payload
         )
         this.editDialog.show = false
-        LNbits.utils.notify('Card updated successfully', 'positive')
-        this.loadGiftCards()
+        Quasar.Notify.create({ message: 'Card updated successfully', type: 'positive' })
+        await this.loadGiftCards()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
@@ -1035,13 +1160,55 @@ window.PageGiftCards = {
         )
         this.deleteDialog.show = false
         const reclaimed = response.data.reclaimed_sats || 0
-        LNbits.utils.notify('Card deleted and ' + reclaimed + ' sats reclaimed', 'positive')
-        this.loadGiftCards()
+        Quasar.Notify.create({ message: 'Card deleted and ' + reclaimed + ' sats reclaimed', type: 'positive' })
+        await this.loadGiftCards()
         this.loadWalletBalance()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
         this.deleteDialog.loading = false
+      }
+    },
+
+    openBulkDeleteDialog() {
+      if (!this.bulkDeleteDialog || this.selectedCards.length === 0) return
+      const activeCards = this.selectedCards.filter(c => c.status === 'active')
+      this.bulkDeleteDialog.count = this.selectedCards.length
+      this.bulkDeleteDialog.activeAmount = activeCards.reduce((sum, c) => sum + (c.amount || 0), 0)
+      this.bulkDeleteDialog.cardIds = this.selectedCards.map(c => c.id)
+      this.bulkDeleteDialog.show = true
+    },
+
+    async confirmBulkDelete() {
+      if (!this.bulkDeleteDialog || this.bulkDeleteDialog.cardIds.length === 0) return
+      this.bulkDeleteDialog.loading = true
+      try {
+        const wallet = this.g.user.wallets[0]
+        const response = await LNbits.api.request(
+          'DELETE',
+          '/giftcards/api/v1/cards/bulk',
+          wallet.adminkey,
+          { card_ids: this.bulkDeleteDialog.cardIds }
+        )
+        this.bulkDeleteDialog.show = false
+        const deleted = response.data.deleted || 0
+        const skipped = response.data.skipped_redeemed || 0
+        const reclaimed = response.data.reclaimed_sats || 0
+        let msg = deleted + ' card' + (deleted === 1 ? '' : 's') + ' deleted'
+        if (reclaimed > 0) {
+          msg += ' and ' + reclaimed + ' sats reclaimed'
+        }
+        if (skipped > 0) {
+          msg += ' (' + skipped + ' redeemed card' + (skipped === 1 ? '' : 's') + ' skipped)'
+        }
+        Quasar.Notify.create({ message: msg, type: 'positive' })
+        this.selectedCards = []
+        await this.loadGiftCards()
+        this.loadWalletBalance()
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      } finally {
+        this.bulkDeleteDialog.loading = false
       }
     },
 
@@ -1060,21 +1227,17 @@ window.PageGiftCards = {
         dateTo: null,
         dateRangeLabel: ''
       }
+      this.dateRange = null
       this.selectedCards = []
       this.loadGiftCards()
     },
 
-    showDateRangePopup() {
-      // q-popup-proxy is attached to the q-input via ref; toggle it
-      if (this.$refs.dateRangePopup) {
-        this.$refs.dateRangePopup.show()
-      }
-    },
-
     applyDateRange() {
-      // Build a human-readable label from dateFrom / dateTo
-      const from = this.dashboardFilters.dateFrom
-      const to = this.dashboardFilters.dateTo
+      // q-date range mode returns {from, to} or null
+      const from = this.dateRange?.from || null
+      const to = this.dateRange?.to || null
+      this.dashboardFilters.dateFrom = from
+      this.dashboardFilters.dateTo = to
       if (from && to) {
         this.dashboardFilters.dateRangeLabel = from + ' — ' + to
       } else if (from) {
@@ -1085,12 +1248,10 @@ window.PageGiftCards = {
         this.dashboardFilters.dateRangeLabel = ''
       }
       this.applyFilters()
-      if (this.$refs.dateRangePopup) {
-        this.$refs.dateRangePopup.hide()
-      }
     },
 
     clearDateRange() {
+      this.dateRange = null
       this.dashboardFilters.dateFrom = null
       this.dashboardFilters.dateTo = null
       this.dashboardFilters.dateRangeLabel = ''
@@ -1099,7 +1260,7 @@ window.PageGiftCards = {
 
     // ----- Bulk email sending (D-04, D-14) -----
 
-    async sendBulkEmails(scope) {
+    sendBulkEmails(scope) {
       // scope: 'selected' → use selectedCards, 'filtered' → use giftCards
       let targetCards
       if (scope === 'selected') {
@@ -1107,21 +1268,22 @@ window.PageGiftCards = {
       } else {
         targetCards = this.giftCards
       }
-      // Filter to cards that have a recipient_email
       const emailable = targetCards.filter(c => c.recipient_email)
       const skipped = targetCards.length - emailable.length
-      if (emailable.length === 0) {
-        LNbits.utils.notify(
-          'No cards with recipient email addresses to send to.',
-          'warning'
-        )
-        return
-      }
+      this.bulkEmailDialog.scope = scope
+      this.bulkEmailDialog.cards = emailable
+      this.bulkEmailDialog.selected = [...emailable]
+      this.bulkEmailDialog.skipped = skipped
+      this.bulkEmailDialog.show = true
+    },
+
+    async confirmBulkEmails() {
+      this.bulkEmailDialog.loading = true
       this.bulkEmailLoading = true
       let sent = 0
       let failed = 0
       try {
-        for (const card of emailable) {
+        for (const card of this.bulkEmailDialog.selected) {
           try {
             const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
             const url = '/giftcards/api/v1/cards/' + card.id + '/deliver'
@@ -1136,16 +1298,19 @@ window.PageGiftCards = {
             failed++
           }
         }
+        const skipped = this.bulkEmailDialog.skipped
         const msg = sent + ' emails sent, ' + skipped + ' skipped (no email address)'
         if (failed > 0) {
-          LNbits.utils.notify(msg + ', ' + failed + ' failed', 'warning')
+          Quasar.Notify.create({ message: msg + ', ' + failed + ' failed', type: 'warning' })
         } else {
-          LNbits.utils.notify(msg, 'positive')
+          Quasar.Notify.create({ message: msg, type: 'positive' })
         }
-        this.loadGiftCards()
+        this.bulkEmailDialog.show = false
+        await this.loadGiftCards()
       } catch (error) {
         LNbits.utils.notifyApiError(error)
       } finally {
+        this.bulkEmailDialog.loading = false
         this.bulkEmailLoading = false
       }
     }

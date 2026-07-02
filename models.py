@@ -32,6 +32,7 @@ class DesignConfig(BaseModel):
     font_family: str = "DejaVuSans"
     font_size: int = 24
     font_color: str = "#000000"
+    bg_color: Optional[str] = None
     text_align: str = "left"
     show_amount: bool = True
     show_recipient: bool = True
@@ -60,6 +61,15 @@ class DesignConfig(BaseModel):
         # M-6: validate hex color so the public render endpoint cannot 500 on junk
         if not _HEX_COLOR_RE.match(v):
             raise ValueError("font_color must be a #RRGGBB hex color")
+        return v
+
+    @validator("bg_color")
+    def _validate_bg_color(cls, v):
+        # M-6: validate hex color (optional) for portrait/landscape background fill
+        if v is None or v == "":
+            return None
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("bg_color must be a #RRGGBB hex color")
         return v
 
     @validator("text_align")
@@ -111,11 +121,20 @@ class DeliverRequest(BaseModel):
     subject: Optional[str] = None
     body: Optional[str] = None
     template: Optional[str] = None
+    bg_color: Optional[str] = None
 
     @validator("recipient_email")
     def _normalize_recipient_email(cls, v):
         # M-1: normalize stored recipient email to lowercase for consistent lookup
         return _normalize_email(v) or ""
+
+    @validator("bg_color")
+    def _validate_bg_color(cls, v):
+        if v is None or v == "":
+            return None
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("bg_color must be a #RRGGBB hex color")
+        return v
 
 
 class CreateGiftCard(BaseModel):
@@ -241,6 +260,7 @@ class CSVRow(BaseModel):
     font_family: Optional[str] = None
     font_size: Optional[int] = None
     font_color: Optional[str] = None
+    bg_color: Optional[str] = None
     text_align: Optional[str] = None
 
     @validator("recipient_email")
@@ -289,6 +309,14 @@ class CSVRow(BaseModel):
             raise ValueError("font_color must be a #RRGGBB hex color")
         return v
 
+    @validator("bg_color")
+    def _validate_bg_color(cls, v):
+        if v is None or v == "":
+            return None
+        if not _HEX_COLOR_RE.match(v):
+            raise ValueError("bg_color must be a #RRGGBB hex color")
+        return v
+
     @validator("text_align")
     def _validate_text_align(cls, v):
         if v is None or v == "":
@@ -323,11 +351,16 @@ class UpdateCardRequest(BaseModel):
 
     Per D-15 — amount is NOT editable (requires cancel + recreate).
     All other metadata fields are directly editable.
+    The optional `design` field allows updating the card's template and
+    card design (QR position, text styling, background color, etc.).
+    Set `clear_design=True` to remove an existing design (bare QR card).
     """
     recipient_name: Optional[str] = None
     sender_name: Optional[str] = None
     message: Optional[str] = None
     recipient_email: Optional[str] = None
+    design: Optional[DesignConfig] = None
+    clear_design: bool = False
 
     @validator("recipient_email")
     def _normalize_recipient_email(cls, v):
@@ -401,20 +434,34 @@ class BulkCreateRequest(BaseModel):
         return v
 
 
+class BulkDeleteRequest(BaseModel):
+    """Request body for DELETE /cards/bulk.
+
+    Per D-16 — bulk delete selected cards, reclaiming sats for any
+    active cards and skipping redeemed cards.
+    """
+    card_ids: List[str] = Field(..., min_items=1, max_items=500)
+
+
 class CardDetailResponse(BaseModel):
     """Detail response for GET /cards/{card_id}.
 
     Per D-11 — redemption_url defaults to None, only populated when
     include_link=true is explicitly passed.
+    Includes the parsed design config so the edit dialog can populate
+    the card designer with the card's current template and styling.
     """
     card_id: str
     amount: int
     status: str
     recipient_name: Optional[str] = None
     sender_name: Optional[str] = None
+    recipient_email: Optional[str] = None
     message: Optional[str] = None
     created_at: datetime
     expires_at: Optional[datetime] = None
     redeemed_at: Optional[datetime] = None
     email_status: Optional[str] = None
+    token_hash: Optional[str] = None
     redemption_url: Optional[str] = None
+    design: Optional[DesignConfig] = None

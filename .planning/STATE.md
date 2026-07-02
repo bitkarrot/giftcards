@@ -46,10 +46,10 @@ Progress: [██████████] 100%
 **By Phase:**
 
 || Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 1 | 3 | 3 | ~25 min |
-| 02 | 3 | - | - |
-| 3 | 0 | TBD | - |
+||-------|-------|-------|----------|
+|| 1 | 3 | 3 | ~25 min |
+|| 02 | 3 | - | - |
+|| 3 | 0 | TBD | - |
 
 **Recent Trend:**
 
@@ -57,8 +57,8 @@ Progress: [██████████] 100%
 - Trend: Phase 1 core loop complete; all 30 tests pass; post-session hardening applied.
 
 *Updated after each plan completion*
-| Phase 01 P02 | 7 min | 3 tasks | 6 files |
-| Phase 01-core-loop P03 | 8min | 3 tasks | 6 files |
+|| Phase 01 P02 | 7 min | 3 tasks | 6 files |
+|| Phase 01-core-loop P03 | 8min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -95,8 +95,8 @@ None yet.
 ## Deferred Items
 
 || Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| Architecture | Drop `card_wallet_id` column | Deferred | 2026-06-29 | Kept nullable for backward compat; can be dropped in a future migration if desired |
+||----------|------|--------|-------------|
+|| Architecture | Drop `card_wallet_id` column | Deferred | 2026-06-29 | Kept nullable for backward compat; can be dropped in a future migration if desired |
 
 ## Session Continuity
 
@@ -111,7 +111,7 @@ The following changes were made after the GSD Phase 1 workflow completed, during
 
 1. **Architecture refactor**: Removed per-card wallet creation. `services.py` rewritten — `create_gift_card` debits issuer wallet directly, `pay_and_complete` pays from issuer wallet, `reclaim_card_sats` credits issuer wallet back. 10 existing card wallets deleted from DB, sats reclaimed.
 2. **Migration m002**: Added `raw_token` and `redemption_url` columns to cards table.
-3. **Proxy headers**: Uvicorn startup command updated with `--proxy-headers --forwarded-allow-ips '*'`.
+3. **Proxy headers**: Uvicorn startup command updated with `--proxy-headers --forwarded-allow-ips '*' `.
 4. **LNURL fixes**: Route name for `url_for`, `CallbackUrl` scheme kwarg, timezone-aware datetime comparison for `expires_at`.
 5. **Frontend fixes**: Quasar `:model-value` binding, dialog formatting, redemption URL display in card table.
 6. **Extension icon**: Added 128x128 PNG icon, updated config.json and `installed_extensions` table.
@@ -119,3 +119,16 @@ The following changes were made after the GSD Phase 1 workflow completed, during
 8. **Tests updated**: All 30 tests pass with new architecture (card_wallet_id=None in fixtures, reclaim test simplified).
 
 All 30 tests pass. Server restarted and verified end-to-end: card creation, public endpoint, LNURL endpoint, QR endpoint all return correct responses.
+
+## Quick Tasks Completed
+
+|| Date | Slug | Description | Summary |
+||------|------|-------------|---------|
+|| 2026-01-15 | icon-only-toolbar-expanded-row | Apply Proposal 2 icon-only toolbar to the dashboard expanded row | `static/js/index.vue` expanded row actions converted to round flat icon buttons with tooltips; Delete separated by divider. `.planning/phases/03-scale-manage/03-VERIFICATION.md` updated with new human verification and truth. |
+|| 2026-01-15 | bulk-delete-selected-cards | Add bulk delete for selected cards in the dashboard | `DELETE /cards/bulk` endpoint, `bulk_reclaim_and_delete` service, `Delete Selected` button + confirmation dialog. 5 new tests. `.planning/phases/03-scale-manage/03-VERIFICATION.md` updated. |
+|| 2026-01-15 | fix-notify-api | Replace LNbits.utils.notify with Quasar.Notify.create | 19 occurrences in `static/js/index.js`. Fixes `TypeError: LNbits.utils.notify` is not a function during bulk create. |
+|| 2026-01-15 | single-create-no-design | Add "No design (bare QR)" option to single Create Gift Card dialog | Added `designMode` to `createDialog.data`; UI selector; `createGiftCard` sends `design: null` when mode is `none`. |
+|| 2026-01-15 | color-picker-right | Move color picker swatch to the right of label text in dialogs | Updated `.color-picker` CSS in `static/js/index.vue` to flex row layout with label left and swatch right. |
+|| 2026-01-15 | bare-qr-no-template | Render bare QR card image without template when design is absent | `_parse_design_config` returns `None`; `_render_bare_qr_image_sync` generates 400x400 square QR. 2 new tests. |
+|| 2026-01-15 | fix-bulk-select-checkboxes | Add missing row selection checkboxes to dashboard table | Custom `header`/`body` templates in `index.vue` now include Quasar selection checkboxes so bulk actions can appear. |
+|| 2026-01-15 | bulk-delete-route-order | Fix 404 on Delete Selected by reordering bulk delete route | Moved `DELETE /cards/bulk` before `DELETE /cards/{card_id}` in `views_api.py`; added route-order regression test. Full suite: 236 passed. |
