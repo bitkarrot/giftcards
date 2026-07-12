@@ -46,21 +46,29 @@ async def m002_add_raw_token(db):
 
 
 async def m003_branded_delivery(db):
-    """Add design config columns, email delivery columns, and magic_links table."""
-    # Design config columns on cards table
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN template_asset_id TEXT")
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN template_name TEXT")
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN qr_config TEXT")
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN text_config TEXT")
+    """Add design config columns, email delivery columns, and magic_links table.
 
-    # Email delivery columns
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN recipient_email TEXT")
-    await db.execute(
-        "ALTER TABLE giftcards.cards ADD COLUMN email_status TEXT DEFAULT 'not_sent'"
-    )
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN email_subject TEXT")
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN email_body TEXT")
-    await db.execute("ALTER TABLE giftcards.cards ADD COLUMN email_template TEXT")
+    Idempotent: catches "duplicate column name" errors so re-running this
+    migration (e.g. after a failed version update) does not fail.
+    """
+    # Design config columns on cards table — try each, skip if already exists
+    for col, col_def in [
+        ("template_asset_id", "TEXT"),
+        ("template_name", "TEXT"),
+        ("qr_config", "TEXT"),
+        ("text_config", "TEXT"),
+        ("recipient_email", "TEXT"),
+        ("email_status", "TEXT DEFAULT 'not_sent'"),
+        ("email_subject", "TEXT"),
+        ("email_body", "TEXT"),
+        ("email_template", "TEXT"),
+    ]:
+        try:
+            await db.execute(
+                f"ALTER TABLE giftcards.cards ADD COLUMN {col} {col_def}"
+            )
+        except Exception:
+            pass  # Column already exists
 
     # Magic links table
     await db.execute(
@@ -92,5 +100,28 @@ async def m004_dashboard_indexes(db):
         f"""
         CREATE INDEX IF NOT EXISTS idx_giftcards_cards_wallet_status_created
         ON {table}(wallet, status, created_at);
+        """
+    )
+
+
+async def m005_template_images(db):
+    """Store custom template images in the giftcards DB.
+
+    Bypasses the global LNbits asset system (which enforces a per-user cap
+    of lnbits_max_assets_per_user, default 1) so non-admin users can upload
+    and replace template images freely.
+    """
+    await db.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS giftcards.template_images (
+            id            TEXT PRIMARY KEY,
+            wallet        TEXT NOT NULL,
+            user_id       TEXT NOT NULL,
+            mime_type     TEXT NOT NULL,
+            filename      TEXT,
+            size_bytes    INTEGER NOT NULL,
+            data          BLOB NOT NULL,
+            created_at    TIMESTAMP NOT NULL DEFAULT {db.timestamp_now}
+        );
         """
     )

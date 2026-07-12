@@ -6,7 +6,7 @@ from typing import Optional
 
 from lnbits.db import Database
 
-from .models import GiftCard, GiftCardSummary, MagicLink
+from .models import GiftCard, GiftCardSummary, MagicLink, TemplateImage
 
 db = Database("ext_giftcards")
 
@@ -356,3 +356,27 @@ async def mark_magic_link_used_if_unused(token_hash: str) -> bool:
         {"hash": token_hash, "now": time.time()},
     )
     return result.rowcount == 1
+
+
+# ---------------------------------------------------------------------------
+# Template images (m005 — bypass global asset per-user cap)
+# ---------------------------------------------------------------------------
+
+async def create_template_image(template: TemplateImage) -> TemplateImage:
+    await db.insert("giftcards.template_images", template)
+    return template
+
+
+async def get_template_image(template_id: str) -> Optional[TemplateImage]:
+    return await db.fetchone(
+        "SELECT * FROM giftcards.template_images WHERE id = :id",
+        {"id": template_id},
+        TemplateImage,
+    )
+
+
+async def delete_template_image(template_id: str) -> None:
+    await db.execute(
+        "DELETE FROM giftcards.template_images WHERE id = :id",
+        {"id": template_id},
+    )

@@ -496,7 +496,10 @@ def _render_card_image_sync(
 async def render_card_image(card: GiftCard, lnurl_url: str, scale: int = 1) -> bytes:
     """Async wrapper that offloads Pillow rendering to a thread.
 
-    Pre-fetches template asset bytes (if any) before offloading to thread.
+    Pre-fetches template bytes (if any) before offloading to thread.
+    Tries the giftcards template_images table first (m005), then falls back
+    to the global LNbits asset system for backward compatibility with cards
+    created before m005.
     """
     design = _parse_design_config(card)
     if design is None:
@@ -505,11 +508,17 @@ async def render_card_image(card: GiftCard, lnurl_url: str, scale: int = 1) -> b
     template_bytes = None
     if design.template_asset_id:
         try:
-            asset = await get_public_asset(design.template_asset_id)
-            if asset:
-                template_bytes = asset.data
+            from .crud import get_template_image
+            template_img = await get_template_image(design.template_asset_id)
+            if template_img:
+                template_bytes = template_img.data
+            else:
+                # Fall back to global asset system for pre-m005 cards
+                asset = await get_public_asset(design.template_asset_id)
+                if asset:
+                    template_bytes = asset.data
         except Exception as exc:
-            logger.warning(f"Failed to load template asset {design.template_asset_id}: {exc}")
+            logger.warning(f"Failed to load template {design.template_asset_id}: {exc}")
             template_bytes = None
 
     return await asyncio.to_thread(

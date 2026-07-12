@@ -47,6 +47,12 @@ window.PageGiftCards = {
       dragState: null,
       resizeState: null,
       isUploadingTemplate: false,
+      // Tracks whether templateAssetId points to a freshly-uploaded asset
+      // that has NOT yet been saved to a card (staged) vs. one loaded from
+      // an existing card design (committed). Staged assets are safe to
+      // delete when replaced or when the dialog is cancelled; committed
+      // assets are referenced by saved cards and must not be deleted.
+      templateAssetStaged: false,
       designLoaded: false,
       // Email delivery dialog
       emailDialog: {
@@ -404,6 +410,10 @@ window.PageGiftCards = {
       }
       this.createDialog.result = null
       // Reset card designer to defaults
+      if (this.templateAssetId && this.templateAssetStaged) {
+        this.deleteAssetFile(this.templateAssetId)
+      }
+      this.templateAssetStaged = false
       this.selectedTemplate = 'portrait'
       this.templateAssetId = null
       this.templateUrl = '/giftcards/static/image/template_portrait.png'
@@ -447,7 +457,10 @@ window.PageGiftCards = {
         this.createDialog.result = response.data
         await this.loadGiftCards()
         this.loadWalletBalance() // Refresh balance
-        
+        // The staged template asset (if any) is now referenced by the saved
+        // card → mark it committed so a subsequent reset won't delete it.
+        this.templateAssetStaged = false
+
         Quasar.Notify.create({ message: 'Gift card created successfully!', type: 'positive' })
       } catch (error) {
         LNbits.utils.notifyApiError(error)
@@ -663,20 +676,29 @@ window.PageGiftCards = {
     // ----- Card Designer: template selection & upload -----
 
     onTemplateChange(value) {
-      if (value === 'portrait') {
-        this.actualTemplateWidth = 425
-        this.actualTemplateHeight = 650
-        this.previewWidth = 212
-        this.previewHeight = 325
-        this.templateUrl = '/giftcards/static/image/template_portrait.png'
+      if (value === 'portrait' || value === 'landscape') {
+        // Switching away from 'custom' abandons the staged upload. Clean it
+        // up so it doesn't count against the user's per-user asset cap
+        // (only staged assets — committed ones are still referenced by a
+        // saved card until the edit is saved).
+        if (this.templateAssetId && this.templateAssetStaged) {
+          this.deleteAssetFile(this.templateAssetId)
+        }
+        this.templateAssetStaged = false
         this.templateAssetId = null
-      } else if (value === 'landscape') {
-        this.actualTemplateWidth = 1050
-        this.actualTemplateHeight = 600
-        this.previewWidth = 262
-        this.previewHeight = 150
-        this.templateUrl = '/giftcards/static/image/template_landscape.png'
-        this.templateAssetId = null
+        if (value === 'portrait') {
+          this.actualTemplateWidth = 425
+          this.actualTemplateHeight = 650
+          this.previewWidth = 212
+          this.previewHeight = 325
+          this.templateUrl = '/giftcards/static/image/template_portrait.png'
+        } else {
+          this.actualTemplateWidth = 1050
+          this.actualTemplateHeight = 600
+          this.previewWidth = 262
+          this.previewHeight = 150
+          this.templateUrl = '/giftcards/static/image/template_landscape.png'
+        }
       }
       // Reset QR/text positions to default fractions so they're on-card
       // after a dimension change (old pixel positions may be off-screen).
@@ -711,9 +733,21 @@ window.PageGiftCards = {
 
       this.isUploadingTemplate = true
       try {
+        // Replace any previously-staged template asset before uploading the
+        // new one. LNbits enforces a per-user asset cap
+        // (lnbits_max_assets_per_user, default 1) that only admin users are
+        // exempt from. Without this cleanup, non-admin users hit the cap on
+        // their first upload and can never change/replace the template image.
+        // Only staged (not-yet-saved) assets are deleted here — committed
+        // assets (loaded from an existing card) are referenced by saved cards
+        // and must not be removed.
+        if (this.templateAssetId && this.templateAssetStaged) {
+          await this.deleteAssetFile(this.templateAssetId)
+        }
         const assetId = await this.uploadAssetFile(file)
         this.templateAssetId = assetId
-        this.templateUrl = `/api/v1/assets/${assetId}/data`
+        this.templateAssetStaged = true
+        this.templateUrl = `/giftcards/api/v1/cards/template/${assetId}`
         // Track actual dimensions and fit a preview that preserves aspect ratio
         // within a ~325px max dimension so the QR scale stays accurate.
         this.actualTemplateWidth = dims.width
@@ -751,16 +785,32 @@ window.PageGiftCards = {
     },
 
     async uploadAssetFile(file) {
+      // Upload to the giftcards extension's own template storage, bypassing
+      // the global LNbits asset system (which enforces a per-user cap of
+      // lnbits_max_assets_per_user, default 1). Uses the wallet's admin key
+      // for authentication, consistent with other giftcards write endpoints.
+      const wallet = this.g.user.wallets[0]
       const form = new FormData()
       form.append('file', file)
-      form.append('public_asset', 'true')
       const {data} = await LNbits.api.request(
         'POST',
-        '/api/v1/assets?public_asset=true',
-        null,
+        '/giftcards/api/v1/cards/template',
+        wallet.adminkey,
         form
       )
       return data.id
+    },
+
+    async deleteAssetFile(assetId) {
+      // Delete a template image from the giftcards extension's own storage.
+      // Used to clean up orphaned/staged templates when replaced or cancelled.
+      // A failure here is non-fatal.
+      try {
+        const wallet = this.g.user.wallets[0]
+        await LNbits.api.request('DELETE', '/giftcards/api/v1/cards/template/' + assetId, wallet.adminkey)
+      } catch (error) {
+        console.warn('Failed to delete previous template:', error)
+      }
     },
 
     // ----- Email delivery dialog -----
@@ -831,6 +881,10 @@ window.PageGiftCards = {
       this.bulkDialog.csvErrorRows = []
       this.bulkDialog.csvData = {designMode: 'none'}
       // Reset card designer to defaults
+      if (this.templateAssetId && this.templateAssetStaged) {
+        this.deleteAssetFile(this.templateAssetId)
+      }
+      this.templateAssetStaged = false
       this.selectedTemplate = 'portrait'
       this.templateAssetId = null
       this.templateUrl = '/giftcards/static/image/template_portrait.png'
@@ -877,6 +931,9 @@ window.PageGiftCards = {
           )
           this.bulkDialog.show = false
           const count = this.bulkDialog.csvRows.length
+          // Staged template asset (if any) is now referenced by the created
+          // cards → mark committed so a later reset won't delete it.
+          this.templateAssetStaged = false
           Quasar.Notify.create({ message: count + ' gift cards created successfully!', type: 'positive' })
           this.clearFilters()
           this.loadWalletBalance()
@@ -904,6 +961,7 @@ window.PageGiftCards = {
 
           this.bulkDialog.show = false
           const count = this.bulkDialog.sameData.count
+          this.templateAssetStaged = false
           Quasar.Notify.create({ message: count + ' gift cards created successfully!', type: 'positive' })
           this.clearFilters()
           this.loadWalletBalance()
@@ -1023,6 +1081,15 @@ window.PageGiftCards = {
     },
 
     resetCardDesigner() {
+      // Clean up a staged (not-yet-saved) template asset so it doesn't
+      // count against the user's per-user asset cap (lnbits_max_assets_per_user,
+      // default 1). Without this, a non-admin user who uploads a template and
+      // then cancels/changes the design would be permanently blocked from
+      // uploading another image. Committed assets (saved to a card) are kept.
+      if (this.templateAssetId && this.templateAssetStaged) {
+        this.deleteAssetFile(this.templateAssetId)
+      }
+      this.templateAssetStaged = false
       this.selectedTemplate = 'portrait'
       this.templateAssetId = null
       this.templateUrl = '/giftcards/static/image/template_portrait.png'
@@ -1058,8 +1125,11 @@ window.PageGiftCards = {
         // preview shows the actual uploaded image and dimensions are
         // available for fraction math (CR-002).
         this.templateAssetId = design.template_asset_id || null
+        // Loaded from a saved card → committed, not staged. Must not be
+        // deleted on replace/reset (the card still references it).
+        this.templateAssetStaged = false
         if (design.template_asset_id) {
-          this.templateUrl = '/api/v1/assets/' + design.template_asset_id + '/data'
+          this.templateUrl = '/giftcards/api/v1/cards/template/' + design.template_asset_id
         }
         // Custom template dimensions are not stored in the design config,
         // so we keep the portrait defaults from resetCardDesigner(). The
@@ -1069,6 +1139,7 @@ window.PageGiftCards = {
         // still relative to the preview area.
       } else {
         this.templateAssetId = design.template_asset_id || null
+        this.templateAssetStaged = false
       }
       // QR position (stored as fractions → convert to preview pixels)
       this.qrX = Math.round((design.qr_x_frac || 0.1) * this.previewWidth)
@@ -1133,6 +1204,9 @@ window.PageGiftCards = {
           payload
         )
         this.editDialog.show = false
+        // A newly-uploaded template asset (if any) is now referenced by the
+        // updated card → mark it committed so resetCardDesigner won't delete it.
+        this.templateAssetStaged = false
         Quasar.Notify.create({ message: 'Card updated successfully', type: 'positive' })
         await this.loadGiftCards()
       } catch (error) {

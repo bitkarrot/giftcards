@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 import asyncio
 import hashlib
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from uuid import uuid4
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
 from lnbits.core.models import WalletTypeInfo
@@ -36,6 +37,9 @@ from .crud import (
     update_card_email_status,
     delete_card,
     update_card_fields,
+    create_template_image,
+    get_template_image,
+    delete_template_image,
 )
 from .models import (
     CreateGiftCard,
@@ -51,6 +55,7 @@ from .models import (
     CSVValidationResult,
     UpdateCardRequest,
     DesignConfig,
+    TemplateImage,
 )
 from .services import (
     create_gift_card,
@@ -283,6 +288,103 @@ async def api_validate_csv(
     except Exception as e:
         logger.error(f"Failed to validate CSV: {e}")
         raise HTTPException(status_code=500, detail="Failed to validate CSV")
+
+
+# ---------------------------------------------------------------------------
+# Template image upload/serve/delete (m005 — bypass global asset per-user cap)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_TEMPLATE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+_MAX_TEMPLATE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+@giftcards_api_router.post("/template")
+async def api_upload_template(
+    file: UploadFile = File(...),
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Upload a custom template image to the giftcards extension's own storage.
+
+    Bypasses the global LNbits asset system (which enforces a per-user cap
+    of lnbits_max_assets_per_user, default 1) so non-admin users can upload
+    and replace template images freely. Returns {"id": "<template_id>"}.
+    """
+    if not file.content_type or file.content_type.lower() not in _ALLOWED_TEMPLATE_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="File type not allowed. Use PNG, JPEG, or WebP.",
+        )
+
+    contents = await file.read()
+    if len(contents) > _MAX_TEMPLATE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {_MAX_TEMPLATE_SIZE_BYTES // 1024 // 1024}MB.",
+        )
+
+    template_id = uuid4().hex
+    template = TemplateImage(
+        id=template_id,
+        wallet=wallet.wallet.id,
+        user_id=wallet.wallet.user,
+        mime_type=file.content_type,
+        filename=file.filename or "template",
+        size_bytes=len(contents),
+        data=contents,
+        created_at=datetime.now(timezone.utc),
+    )
+    await create_template_image(template)
+    return {"id": template_id}
+
+
+@giftcards_api_router.get("/template/{template_id}")
+async def api_get_template(template_id: str) -> Response:
+    """Serve a template image (public, no auth — needed for card rendering).
+
+    Falls back to the global LNbits asset system for backward compatibility
+    with cards created before m005 that store a global asset ID in
+    template_asset_id.
+    """
+    template = await get_template_image(template_id)
+    if template:
+        return Response(
+            content=template.data,
+            media_type=template.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Content-Disposition": f'inline; filename="{template.filename}"',
+            },
+        )
+
+    # Backward compatibility: try the global asset system for old cards
+    from lnbits.core.crud.assets import get_public_asset
+    asset = await get_public_asset(template_id)
+    if asset:
+        return Response(
+            content=asset.data,
+            media_type=asset.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Content-Disposition": f'inline; filename="{asset.name}"',
+            },
+        )
+
+    raise HTTPException(status_code=404, detail="Template not found")
+
+
+@giftcards_api_router.delete("/template/{template_id}")
+async def api_delete_template(
+    template_id: str,
+    wallet: WalletTypeInfo = Depends(require_admin_key),
+) -> dict:
+    """Delete a template image owned by the authenticated wallet."""
+    template = await get_template_image(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if template.wallet != wallet.wallet.id:
+        raise HTTPException(status_code=403, detail="Template does not belong to this wallet")
+    await delete_template_image(template_id)
+    return {"success": True}
 
 
 @giftcards_api_router.get("/public/{token_hash}")

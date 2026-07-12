@@ -104,6 +104,23 @@ class MagicLink(BaseModel):
     used_at: Optional[datetime] = None
 
 
+class TemplateImage(BaseModel):
+    """Custom template image stored in the giftcards DB.
+
+    Bypasses the global LNbits asset system (which enforces a per-user cap
+    of lnbits_max_assets_per_user, default 1) so non-admin users can upload
+    and replace template images freely.
+    """
+    id: str
+    wallet: str
+    user_id: str
+    mime_type: str
+    filename: Optional[str] = None
+    size_bytes: int
+    data: bytes
+    created_at: datetime
+
+
 class ClaimRequest(BaseModel):
     """Request body for claim endpoint."""
     email: str
