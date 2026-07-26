@@ -1263,8 +1263,11 @@ window.PageGiftCards = {
       if (!this.deleteDialog.card) return
       this.deleteDialog.loading = true
       try {
-        const wallet = this.g.user.wallets.find(w => w.id === this.deleteDialog.card.wallet) || this.g.user.wallets[0]
-        const url = '/giftcards/api/v1/cards/' + this.deleteDialog.card.id
+        const card = this.deleteDialog.card
+        // card.id from table rows, card.card_id from CardDetailResponse
+        const cardId = card.id || card.card_id
+        const wallet = this.g.user.wallets.find(w => w.id === card.wallet) || this.g.user.wallets[0]
+        const url = '/giftcards/api/v1/cards/' + cardId
         const response = await LNbits.api.request(
           'DELETE',
           url,

@@ -1396,7 +1396,6 @@
               color="negative"
               icon="delete"
               @click="openDeleteDialog(detailDialog.card); detailDialog.show = false"
-              :disable="detailDialog.card.status === 'redeemed'"
             >
               Delete Card
             </q-btn>
