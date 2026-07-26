@@ -209,6 +209,60 @@
               <q-tr v-show="props.expand" :props="props">
                 <q-td colspan="100%">
                   <div class="q-pa-md">
+                    <div class="row items-center justify-between q-mb-md">
+                      <div class="row q-gutter-sm items-center">
+                        <q-btn
+                          round
+                          flat
+                          color="primary"
+                          icon="mail"
+                          @click="openEmailDialog(props.row)"
+                          aria-label="Send gift card email"
+                        >
+                          <q-tooltip>Send Email</q-tooltip>
+                        </q-btn>
+                        <q-btn
+                          round
+                          flat
+                          color="primary"
+                          icon="download"
+                          @click="downloadPrintable(props.row)"
+                          aria-label="Download gift card image"
+                        >
+                          <q-tooltip>Download PNG</q-tooltip>
+                        </q-btn>
+                        <q-btn
+                          round
+                          flat
+                          :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
+                          icon="edit"
+                          @click="openEditDialog(props.row)"
+                          :disable="props.row.status === 'redeemed'"
+                          aria-label="Edit gift card"
+                        >
+                          <q-tooltip>
+                            {{ props.row.status === 'redeemed' ? 'Redeemed cards cannot be edited.' : 'Edit' }}
+                          </q-tooltip>
+                        </q-btn>
+                      </div>
+                      <q-separator vertical inset></q-separator>
+                      <q-btn
+                        round
+                        flat
+                        color="negative"
+                        icon="delete"
+                        @click="openDeleteDialog(props.row)"
+                        :disable="props.row.status === 'redeemed'"
+                        aria-label="Delete gift card"
+                      >
+                        <q-tooltip>
+                          {{ props.row.status === 'redeemed' ? 'Redeemed cards cannot be deleted.' : 'Delete' }}
+                        </q-tooltip>
+                      </q-btn>
+                    </div>
+
+                    <q-separator class="q-mb-md"></q-separator>
+
                     <div class="row q-col-gutter-md">
                       <div class="col-12 col-md-6">
                         <div class="text-caption">From:</div>
@@ -255,64 +309,6 @@
                         </q-btn>
                       </template>
                     </q-input>
-
-                    <q-separator class="q-my-md"></q-separator>
-
-                    <div class="row items-center justify-between">
-                      <div class="row q-gutter-sm items-center">
-                        <q-btn
-                          round
-                          flat
-                          size="sm"
-                          color="primary"
-                          icon="mail"
-                          @click="openEmailDialog(props.row)"
-                          aria-label="Send gift card email"
-                        >
-                          <q-tooltip>Send Email</q-tooltip>
-                        </q-btn>
-                        <q-btn
-                          round
-                          flat
-                          size="sm"
-                          color="primary"
-                          icon="download"
-                          @click="downloadPrintable(props.row)"
-                          aria-label="Download gift card image"
-                        >
-                          <q-tooltip>Download PNG</q-tooltip>
-                        </q-btn>
-                        <q-btn
-                          round
-                          flat
-                          size="sm"
-                          :color="$q.dark.isActive ? 'grey-7' : 'grey-5'"
-                          icon="edit"
-                          @click="openEditDialog(props.row)"
-                          :disable="props.row.status === 'redeemed'"
-                          aria-label="Edit gift card"
-                        >
-                          <q-tooltip>
-                            {{ props.row.status === 'redeemed' ? 'Redeemed cards cannot be edited.' : 'Edit' }}
-                          </q-tooltip>
-                        </q-btn>
-                      </div>
-                      <q-separator vertical inset></q-separator>
-                      <q-btn
-                        round
-                        flat
-                        size="sm"
-                        color="negative"
-                        icon="delete"
-                        @click="openDeleteDialog(props.row)"
-                        :disable="props.row.status === 'redeemed'"
-                        aria-label="Delete gift card"
-                      >
-                        <q-tooltip>
-                          {{ props.row.status === 'redeemed' ? 'Redeemed cards cannot be deleted.' : 'Delete' }}
-                        </q-tooltip>
-                      </q-btn>
-                    </div>
                   </div>
                 </q-td>
               </q-tr>
