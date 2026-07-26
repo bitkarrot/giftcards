@@ -142,7 +142,6 @@
               <q-tr :props="props">
                 <q-th auto-width>
                   <q-checkbox
-                    v-if="props.multipleSelect"
                     :model-value="allSelected"
                     @update:model-value="val => toggleSelectAll(val, props.rows)"
                     dense
