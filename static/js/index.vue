@@ -252,12 +252,9 @@
                         color="negative"
                         icon="delete"
                         @click="openDeleteDialog(props.row)"
-                        :disable="props.row.status === 'redeemed'"
                         aria-label="Delete gift card"
                       >
-                        <q-tooltip>
-                          {{ props.row.status === 'redeemed' ? 'Redeemed cards cannot be deleted.' : 'Delete' }}
-                        </q-tooltip>
+                        <q-tooltip>Delete</q-tooltip>
                       </q-btn>
                     </div>
 
@@ -1710,10 +1707,6 @@
               {{ bulkDeleteDialog.activeAmount }} sats will be reclaimed to your wallet.
             </span>
           </p>
-
-          <q-banner color="warning" rounded icon="warning" dense>
-            Redeemed cards in the selection will be skipped and not deleted.
-          </q-banner>
 
           <div class="row q-mt-lg">
             <q-btn

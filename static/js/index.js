@@ -1270,14 +1270,10 @@ window.PageGiftCards = {
         )
         this.bulkDeleteDialog.show = false
         const deleted = response.data.deleted || 0
-        const skipped = response.data.skipped_redeemed || 0
         const reclaimed = response.data.reclaimed_sats || 0
         let msg = deleted + ' card' + (deleted === 1 ? '' : 's') + ' deleted'
         if (reclaimed > 0) {
           msg += ' and ' + reclaimed + ' sats reclaimed'
-        }
-        if (skipped > 0) {
-          msg += ' (' + skipped + ' redeemed card' + (skipped === 1 ? '' : 's') + ' skipped)'
         }
         Quasar.Notify.create({ message: msg, type: 'positive' })
         this.selectedCards = []

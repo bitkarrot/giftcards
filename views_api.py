@@ -775,8 +775,8 @@ async def api_bulk_delete_cards(
 ) -> dict:
     """Delete multiple selected gift cards, reclaiming sats for active ones.
 
-    Redeemed cards are silently skipped. Returns a summary of deleted,
-    skipped, and reclaimed sats.
+    Redeemed cards are deleted (sats already paid out, no reclaim).
+    Returns a summary of deleted count and reclaimed sats.
     """
     cards = await get_cards_by_ids(data.card_ids)
     found_ids = {card.id for card in cards}
@@ -798,7 +798,6 @@ async def api_bulk_delete_cards(
     return {
         "status": "deleted",
         "deleted": result["deleted"],
-        "skipped_redeemed": result["skipped_redeemed"],
         "reclaimed_sats": result["reclaimed_sats"],
     }
 
@@ -810,10 +809,9 @@ async def api_delete_card(
 ) -> dict:
     """Delete a gift card with sats reclaim.
 
-    Per D-16 — hard delete with sats reclaim:
     - Active cards: reclaim sats to issuer wallet, then delete.
     - Expired cards: sats already reclaimed, just delete.
-    - Redeemed cards: return 409 (cannot be deleted).
+    - Redeemed cards: sats already paid out, just delete the record.
     Returns 404 if not found, 403 if card belongs to a different wallet.
     """
     card = await get_card(card_id)
@@ -822,9 +820,6 @@ async def api_delete_card(
 
     if card.wallet != wallet.wallet.id:
         raise HTTPException(status_code=403, detail="Card does not belong to this wallet")
-
-    if card.status == "redeemed":
-        raise HTTPException(status_code=409, detail="Redeemed cards cannot be deleted")
 
     await reclaim_sats_and_delete(card)
 

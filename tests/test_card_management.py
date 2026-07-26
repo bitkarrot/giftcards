@@ -177,24 +177,23 @@ async def test_reclaim_sats_and_delete_expired_card():
 
 
 # ---------------------------------------------------------------------------
-# DELETE endpoint — redeemed card returns 409
+# DELETE endpoint — redeemed card can be deleted
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_delete_redeemed_card_returns_409():
-    """DELETE endpoint on a redeemed card returns 409 (tested at endpoint layer)."""
+async def test_delete_redeemed_card_succeeds():
+    """DELETE endpoint on a redeemed card deletes it (sats already paid out)."""
     if not IMPORTS_AVAILABLE:
         pytest.skip(f"Imports not available: {IMPORT_ERROR}")
 
-    from fastapi import HTTPException
     from giftcards.views_api import api_delete_card
 
     card = await _make_card(wallet_id="wallet_a", status="redeemed")
 
-    with pytest.raises(HTTPException) as exc_info:
-        await api_delete_card(card_id=card.id, wallet=_wallet_mock("wallet_a"))
+    result = await api_delete_card(card_id=card.id, wallet=_wallet_mock("wallet_a"))
 
-    assert exc_info.value.status_code == 409
+    assert result["status"] == "deleted"
+    assert result["reclaimed_sats"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +403,6 @@ async def test_api_bulk_delete_cards_deletes_active_and_reclaims():
 
     assert result["status"] == "deleted"
     assert result["deleted"] == 2
-    assert result["skipped_redeemed"] == 0
     assert result["reclaimed_sats"] == 1200
     assert ("wallet_a", 500) in balance_changes
     assert ("wallet_a", 700) in balance_changes
@@ -413,8 +411,8 @@ async def test_api_bulk_delete_cards_deletes_active_and_reclaims():
 
 
 @pytest.mark.anyio
-async def test_api_bulk_delete_cards_skips_redeemed():
-    """DELETE /cards/bulk skips redeemed cards and deletes the rest."""
+async def test_api_bulk_delete_cards_includes_redeemed():
+    """DELETE /cards/bulk deletes redeemed cards too (sats already paid out)."""
     if not IMPORTS_AVAILABLE:
         pytest.skip(f"Imports not available: {IMPORT_ERROR}")
 
@@ -442,11 +440,10 @@ async def test_api_bulk_delete_cards_skips_redeemed():
         )
 
     assert result["status"] == "deleted"
-    assert result["deleted"] == 1
-    assert result["skipped_redeemed"] == 1
+    assert result["deleted"] == 2
     assert result["reclaimed_sats"] == 500
     assert await get_card(active_card.id) is None
-    assert await get_card(redeemed_card.id) is not None
+    assert await get_card(redeemed_card.id) is None
 
 
 @pytest.mark.anyio

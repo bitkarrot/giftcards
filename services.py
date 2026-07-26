@@ -224,38 +224,33 @@ async def reclaim_card_sats(card: GiftCard) -> None:
 async def reclaim_sats_and_delete(card: GiftCard) -> None:
     """Reclaim sats (if active) and hard-delete the card record.
 
-    Per D-16:
     - Active cards: reclaim sats to issuer wallet, then delete.
     - Expired cards: skip reclaim (sats already reclaimed by expiry task), then delete.
-    - Redeemed cards: caller must reject with 409 BEFORE calling this function.
+    - Redeemed cards: skip reclaim (sats already paid out), then delete.
     """
     if card.status == "active":
         await reclaim_card_sats(card)
     # expired: sats already reclaimed by expiry task — skip
-    # redeemed: caller rejects before reaching here
+    # redeemed: sats already paid out — skip reclaim, just delete
     await delete_card(card.id)
 
 
 async def bulk_reclaim_and_delete(cards: list[GiftCard]) -> dict:
-    """Delete a list of cards, reclaiming sats for active ones and skipping redeemed.
+    """Delete a list of cards, reclaiming sats for active ones.
 
-    Returns a summary of how many cards were deleted, how many were
-    skipped because they were redeemed, and the total sats reclaimed.
+    Redeemed cards are deleted (sats already paid out, no reclaim).
+    Returns a summary of how many cards were deleted and the total
+    sats reclaimed.
     """
     deleted = 0
-    skipped_redeemed = 0
     reclaimed_sats = 0
     for card in cards:
-        if card.status == "redeemed":
-            skipped_redeemed += 1
-            continue
         if card.status == "active":
             reclaimed_sats += card.amount
         await reclaim_sats_and_delete(card)
         deleted += 1
     return {
         "deleted": deleted,
-        "skipped_redeemed": skipped_redeemed,
         "reclaimed_sats": reclaimed_sats,
     }
 
