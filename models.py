@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field, validator, root_validator
 
 # Allowlists for filesystem-interpolated design fields (H-1: path traversal defense)
 ALLOWED_FONTS = {"DejaVuSans", "DejaVuSerif", "DejaVuSansMono"}
-ALLOWED_TEMPLATES = {"portrait", "landscape", "custom"}
+ALLOWED_TEMPLATES = {
+    "portrait", "landscape", "custom",
+    # Sample templates — bundled background images in static/image/
+    "GiftBoxes", "GiftCard", "HappyBirthday", "MerryXmas",
+    "OrangeCard", "PurpleGift", "SatsGiftCard", "SeasonsGreetings",
+}
 ALLOWED_TEXT_ALIGN = {"left", "center", "right"}
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 # Bech32 npub format: starts with "npub1", followed by alphanumeric chars, total ~62-64

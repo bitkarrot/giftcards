@@ -26,6 +26,19 @@ window.PageGiftCards = {
       selectedTemplate: 'portrait',
       templateAssetId: null,
       templateUrl: '/giftcards/static/image/template_portrait.png',
+      // Sample templates — bundled background images shipped with the
+      // extension. All 825x638. The server loads any template_{value}.png
+      // from static/image/, so these just need matching filenames.
+      sampleTemplates: [
+        {value: 'GiftBoxes',         label: 'Gift Boxes',          w: 825, h: 638},
+        {value: 'GiftCard',          label: 'Gift Card',           w: 825, h: 638},
+        {value: 'HappyBirthday',     label: 'Happy Birthday',      w: 825, h: 638},
+        {value: 'MerryXmas',         label: 'Merry Xmas',          w: 825, h: 638},
+        {value: 'OrangeCard',        label: 'Orange Card',         w: 825, h: 638},
+        {value: 'PurpleGift',        label: 'Purple Gift',         w: 825, h: 638},
+        {value: 'SatsGiftCard',      label: 'Sats Gift Card',      w: 825, h: 638},
+        {value: 'SeasonsGreetings',  label: "Season's Greetings",  w: 825, h: 638}
+      ],
       qrX: 21,
       qrY: 228,
       qrSize: 150,
@@ -182,9 +195,14 @@ window.PageGiftCards = {
       ]
     },
     templateOptions() {
+      const samples = this.sampleTemplates.map(s => ({
+        label: s.label,
+        value: s.value
+      }))
       return [
         {label: 'Portrait (425x650)', value: 'portrait'},
         {label: 'Landscape (1050x600)', value: 'landscape'},
+        ...samples,
         {label: 'Custom Upload', value: 'custom'}
       ]
     },
@@ -200,7 +218,8 @@ window.PageGiftCards = {
     },
     bgColorEnabled() {
       // Background color only applies to the bundled portrait/landscape
-      // templates (custom uploads define their own background image).
+      // templates (custom uploads and sample templates define their own
+      // background image).
       return this.selectedTemplate === 'portrait' || this.selectedTemplate === 'landscape'
     },
     cardPreviewStyle() {
@@ -680,7 +699,7 @@ window.PageGiftCards = {
     // ----- Card Designer: template selection & upload -----
 
     onTemplateChange(value) {
-      if (value === 'portrait' || value === 'landscape') {
+      if (value !== 'custom') {
         // Switching away from 'custom' abandons the staged upload. Clean it
         // up so it doesn't count against the user's per-user asset cap
         // (only staged assets — committed ones are still referenced by a
@@ -690,26 +709,41 @@ window.PageGiftCards = {
         }
         this.templateAssetStaged = false
         this.templateAssetId = null
-        if (value === 'portrait') {
-          this.actualTemplateWidth = 425
-          this.actualTemplateHeight = 650
-          this.previewWidth = 212
-          this.previewHeight = 325
-          this.templateUrl = '/giftcards/static/image/template_portrait.png'
-        } else {
-          this.actualTemplateWidth = 1050
-          this.actualTemplateHeight = 600
-          this.previewWidth = 262
-          this.previewHeight = 150
-          this.templateUrl = '/giftcards/static/image/template_landscape.png'
+      }
+
+      if (value === 'portrait') {
+        this.actualTemplateWidth = 425
+        this.actualTemplateHeight = 650
+        this.previewWidth = 212
+        this.previewHeight = 325
+        this.templateUrl = '/giftcards/static/image/template_portrait.png'
+      } else if (value === 'landscape') {
+        this.actualTemplateWidth = 1050
+        this.actualTemplateHeight = 600
+        this.previewWidth = 262
+        this.previewHeight = 150
+        this.templateUrl = '/giftcards/static/image/template_landscape.png'
+      } else if (value !== 'custom') {
+        // Sample template — look up dimensions from the sample config
+        const sample = this.sampleTemplates.find(s => s.value === value)
+        if (sample) {
+          this.actualTemplateWidth = sample.w
+          this.actualTemplateHeight = sample.h
+          // Scale preview to ~300px wide while preserving aspect ratio
+          const scale = 300 / sample.w
+          this.previewWidth = Math.round(sample.w * scale)
+          this.previewHeight = Math.round(sample.h * scale)
+          this.templateUrl = `/giftcards/static/image/template_${value}.png`
         }
       }
       // Reset QR/text positions to default fractions so they're on-card
       // after a dimension change (old pixel positions may be off-screen).
-      this.qrX = Math.round(0.1 * this.previewWidth)
-      this.qrY = Math.round(0.7 * this.previewHeight)
-      this.textX = Math.round(0.1 * this.previewWidth)
-      this.textY = Math.round(0.1 * this.previewHeight)
+      if (value !== 'custom') {
+        this.qrX = Math.round(0.1 * this.previewWidth)
+        this.qrY = Math.round(0.7 * this.previewHeight)
+        this.textX = Math.round(0.1 * this.previewWidth)
+        this.textY = Math.round(0.1 * this.previewHeight)
+      }
       // 'custom' — actual + preview dimensions set in handleTemplateSelected
     },
 
