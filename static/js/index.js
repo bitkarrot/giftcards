@@ -335,6 +335,10 @@ window.PageGiftCards = {
                 this.dashboardFilters.search ||
                 this.dashboardFilters.dateFrom ||
                 this.dashboardFilters.dateTo)
+    },
+    allSelected() {
+      return this.giftCards.length > 0 &&
+             this.selectedCards.length === this.giftCards.length
     }
   },
   mounted() {
@@ -342,6 +346,13 @@ window.PageGiftCards = {
     this.loadWalletBalance()
   },
   methods: {
+    toggleSelectAll(val, rows) {
+      if (val) {
+        this.selectedCards = [...(rows || this.giftCards)]
+      } else {
+        this.selectedCards = []
+      }
+    },
     async loadGiftCards() {
       this.loading = true
       try {
