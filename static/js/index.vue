@@ -164,10 +164,11 @@
                 </q-td>
                 <q-td auto-width>
                   <q-btn
-                    round
-                    flat
                     size="sm"
                     color="primary"
+                    round
+                    dense
+                    flat
                     icon="info"
                     @click="openDetailDialog(props.row)"
                     aria-label="View full details"
