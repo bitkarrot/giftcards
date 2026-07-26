@@ -163,13 +163,16 @@
                 </q-td>
                 <q-td auto-width>
                   <q-btn
-                    size="sm"
-                    color="accent"
                     round
-                    dense
-                    @click="props.expand = !props.expand"
-                    :icon="props.expand ? 'expand_less' : 'expand_more'"
-                  ></q-btn>
+                    flat
+                    size="sm"
+                    color="primary"
+                    icon="info"
+                    @click="openDetailDialog(props.row)"
+                    aria-label="View full details"
+                  >
+                    <q-tooltip>View Full Details</q-tooltip>
+                  </q-btn>
                 </q-td>
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                   <span v-if="col.name === 'amount'">{{ col.value }} sats</span>
@@ -268,17 +271,6 @@
                           aria-label="Download gift card image"
                         >
                           <q-tooltip>Download PNG</q-tooltip>
-                        </q-btn>
-                        <q-btn
-                          round
-                          flat
-                          size="sm"
-                          color="primary"
-                          icon="info"
-                          @click="openDetailDialog(props.row)"
-                          aria-label="View full details"
-                        >
-                          <q-tooltip>View Full Details</q-tooltip>
                         </q-btn>
                         <q-btn
                           round
