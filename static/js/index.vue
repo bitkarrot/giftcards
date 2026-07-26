@@ -178,7 +178,7 @@
                 <q-td auto-width>
                   <q-btn
                     size="sm"
-                    color="accent"
+                    :color="$q.dark.isActive ? 'grey-6' : 'grey-7'"
                     round
                     dense
                     @click="props.expand = !props.expand"
