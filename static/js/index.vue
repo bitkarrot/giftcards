@@ -168,7 +168,6 @@
                     color="primary"
                     round
                     dense
-                    flat
                     icon="info"
                     @click="openDetailDialog(props.row)"
                     aria-label="View full details"
