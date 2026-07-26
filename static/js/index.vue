@@ -148,6 +148,7 @@
                   ></q-checkbox>
                 </q-th>
                 <q-th auto-width></q-th>
+                <q-th auto-width></q-th>
                 <q-th v-for="col in props.cols" :key="col.name" :props="props">
                   <span v-text="col.label"></span>
                 </q-th>
@@ -174,9 +175,18 @@
                     <q-tooltip>View Full Details</q-tooltip>
                   </q-btn>
                 </q-td>
+                <q-td auto-width>
+                  <q-btn
+                    size="sm"
+                    color="accent"
+                    round
+                    dense
+                    @click="props.expand = !props.expand"
+                    :icon="props.expand ? 'expand_less' : 'expand_more'"
+                  ></q-btn>
+                </q-td>
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
-                  <span v-if="col.name === 'amount'">{{ col.value }} sats</span>
-                  <span v-else-if="col.name === 'status'">
+                  <span v-if="col.name === 'status'">
                     <q-badge
                       :color="getStatusColor(col.value)"
                       :label="getStatusText(col.value)"

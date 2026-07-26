@@ -152,13 +152,6 @@ window.PageGiftCards = {
     giftCardColumns() {
       return [
         {
-          name: 'amount',
-          align: 'left',
-          label: 'Amount',
-          field: 'amount',
-          sortable: true
-        },
-        {
           name: 'recipient_name',
           align: 'left',
           label: 'Recipient',
