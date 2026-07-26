@@ -14,6 +14,7 @@ from lnurl import (
     LnurlSuccessResponse,
     LnurlWithdrawResponse,
     MilliSatoshi,
+    encode as lnurl_encode,
 )
 from loguru import logger
 from PIL import Image, ImageDraw
@@ -74,6 +75,64 @@ from .services import (
 giftcards_api_router = APIRouter(prefix="/api/v1/cards")
 giftcards_lnurl_router = APIRouter(prefix="/api/v1/lnurl")
 giftcards_claim_router = APIRouter(prefix="/api/v1/claim")
+
+
+def _lnurl_bech32(url: str) -> str:
+    """Encode an HTTPS LNURL endpoint as a bech32 LNURL string.
+
+    Lightning wallets (Strike, BlueWallet, Primal, etc.) only recognize
+    LNURL-withdraw QR codes that contain the bech32-encoded form
+    (``LNURL1...``), not the raw HTTPS URL.
+    """
+    return str(lnurl_encode(url).bech32)
+
+
+def _lnurl_lud17(url: str) -> str:
+    """Convert an HTTPS LNURL endpoint to a LUD-17 ``lnurlw://`` URL.
+
+    Some wallets accept the raw URL with the scheme swapped from
+    ``https://`` to ``lnurlw://`` (LUD-17) instead of the bech32 form.
+    """
+    if url.startswith("http://"):
+        return url.replace("http://", "lnurlw://", 1)
+    return url.replace("https://", "lnurlw://", 1)
+
+
+def _lnurl_qr_data(url: str, encoding: str = "bech32") -> str:
+    """Return the QR payload for the requested encoding.
+
+    ``bech32`` → ``LNURL1...`` (default, widest wallet support)
+    ``lud17``  → ``lnurlw://host/path`` (LUD-17 raw-URL form)
+    """
+    if encoding == "lud17":
+        return _lnurl_lud17(url)
+    return _lnurl_bech32(url)
+
+
+def _public_base_url(request: Request) -> str:
+    """Build the public base URL from X-Forwarded-* headers.
+
+    When running behind a reverse proxy (e.g. exe.dev), uvicorn's
+    ``--proxy-headers`` flag handles ``X-Forwarded-Proto`` (scheme) and
+    ``X-Forwarded-For`` (client IP), but does NOT rewrite the ``Host``
+    header from ``X-Forwarded-Host``. This means ``request.url_for()``
+    and ``request.base_url`` produce URLs with the internal host
+    (e.g. ``http://127.0.0.1:5000``) instead of the public one
+    (e.g. ``https://schedulerlnbits.exe.xyz``).
+
+    External Lightning wallets cannot reach the internal host, so
+    LNURL callback URLs must use the public address. This helper
+    reads ``X-Forwarded-Host`` and ``X-Forwarded-Proto`` directly,
+    falling back to ``request.base_url`` when they are absent.
+    """
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    if forwarded_host:
+        scheme = forwarded_proto or "https"
+        # forwarded_host may include a port; use as-is
+        return f"{scheme}://{forwarded_host.rstrip('/')}"
+    # No proxy headers — use the request's own base URL
+    return str(request.base_url).rstrip("/")
 
 
 def _parse_date_to_timestamp(date_str: str) -> float:
@@ -421,31 +480,6 @@ async def api_get_public_card(token_hash: str) -> PublicGiftCard:
     )
 
 
-@giftcards_lnurl_router.get("/{token_hash}")
-async def lnurl_params(
-    token_hash: str, request: Request
-) -> LnurlWithdrawResponse | LnurlErrorResponse:
-    """LNURL-withdraw parameters endpoint."""
-    card = await get_card_by_token_hash(token_hash)
-    if not card:
-        return LnurlErrorResponse(reason="Gift card not found")
-
-    if card.status != "active":
-        return LnurlErrorResponse(reason=f"Gift card is {card.status}")
-
-    # Build callback URL
-    callback_url = str(request.url_for("giftcards.lnurl_callback"))
-
-    return LnurlWithdrawResponse(
-        callback=CallbackUrl(callback_url, scheme=request.url.scheme),
-        k1=token_hash,
-        tag="withdrawRequest",
-        minWithdrawable=MilliSatoshi(card.amount * 1000),
-        maxWithdrawable=MilliSatoshi(card.amount * 1000),
-        defaultDescription=f"Gift card {card.id[:8]}",
-    )
-
-
 @giftcards_lnurl_router.get("/callback", name="giftcards.lnurl_callback")
 async def lnurl_callback(
     pr: str | None = None,
@@ -455,6 +489,10 @@ async def lnurl_callback(
 
     Validates the request, atomically claims the card, pays the invoice,
     and resets the card to active on any failure so the recipient can retry.
+
+    NOTE: This route MUST be declared before /{token_hash}, otherwise
+    FastAPI will match /callback as token_hash="callback" and route the
+    request to lnurl_params instead.
     """
     if not pr:
         return JSONResponse(
@@ -500,6 +538,34 @@ async def lnurl_callback(
         )
 
 
+@giftcards_lnurl_router.get("/{token_hash}")
+async def lnurl_params(
+    token_hash: str, request: Request
+) -> LnurlWithdrawResponse | LnurlErrorResponse:
+    """LNURL-withdraw parameters endpoint."""
+    card = await get_card_by_token_hash(token_hash)
+    if not card:
+        return LnurlErrorResponse(reason="Gift card not found")
+
+    if card.status != "active":
+        return LnurlErrorResponse(reason=f"Gift card is {card.status}")
+
+    # Build callback URL using the public base URL (from X-Forwarded-*
+    # headers) so external wallets can reach it. request.url_for() uses
+    # the internal Host header which is unreachable from the internet.
+    base_url = _public_base_url(request)
+    callback_url = f"{base_url}/giftcards/api/v1/lnurl/callback"
+
+    return LnurlWithdrawResponse(
+        callback=CallbackUrl(callback_url, scheme=request.url.scheme),
+        k1=token_hash,
+        tag="withdrawRequest",
+        minWithdrawable=MilliSatoshi(card.amount * 1000),
+        maxWithdrawable=MilliSatoshi(card.amount * 1000),
+        defaultDescription=f"Gift card {card.id[:8]}",
+    )
+
+
 @giftcards_lnurl_router.get("/{token_hash}/qr")
 async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
     """Generate QR code for LNURL-withdraw endpoint."""
@@ -516,11 +582,14 @@ async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
         if now > expires:
             raise HTTPException(status_code=410, detail="Gift card is not redeemable")
 
-    # Build LNURL URL
-    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
-    
+    # Build LNURL URL and encode it as bech32 for the QR code. Lightning
+    # wallets only recognize the bech32-encoded form (LNURL1...), not the
+    # raw HTTPS URL.
+    lnurl_url = f"{_public_base_url(request)}/giftcards/api/v1/lnurl/{token_hash}"
+    qr_data = _lnurl_bech32(lnurl_url)
+
     # Generate QR code
-    qr_img = make_qr_png(lnurl_url, size=300)
+    qr_img = make_qr_png(qr_data, size=300)
     output = BytesIO()
     qr_img.save(output, format="PNG")
     output.seek(0)
@@ -537,17 +606,24 @@ async def lnurl_qr(token_hash: str, request: Request) -> StreamingResponse:
 
 
 @giftcards_api_router.get("/{token_hash}/image")
-async def api_card_image(token_hash: str, request: Request) -> StreamingResponse:
+async def api_card_image(
+    token_hash: str, request: Request, encoding: str = "bech32"
+) -> StreamingResponse:
     """Render branded card image on demand (public, no auth).
 
     Returns a PNG via StreamingResponse with no-cache headers.
+
+    The ``encoding`` query parameter controls which LNURL form is baked
+    into the QR: ``bech32`` (default, ``LNURL1...``) or ``lud17``
+    (``lnurlw://host/path``).
     """
     card = await get_card_by_token_hash(token_hash)
     if not card:
         raise HTTPException(status_code=404, detail="Gift card not found")
 
-    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{token_hash}"
-    png_bytes = await render_card_image(card, lnurl_url, scale=1)
+    lnurl_url = f"{_public_base_url(request)}/giftcards/api/v1/lnurl/{token_hash}"
+    qr_data = _lnurl_qr_data(lnurl_url, encoding)
+    png_bytes = await render_card_image(card, qr_data, scale=1)
     output = BytesIO(png_bytes)
 
     return StreamingResponse(
@@ -575,8 +651,9 @@ async def api_card_print(
     if not card:
         raise HTTPException(status_code=404, detail="Gift card not found")
 
-    lnurl_url = f"{str(request.base_url).rstrip('/')}/giftcards/api/v1/lnurl/{card.token_hash}"
-    png_bytes = await render_card_image(card, lnurl_url, scale=3)
+    lnurl_url = f"{_public_base_url(request)}/giftcards/api/v1/lnurl/{card.token_hash}"
+    qr_data = _lnurl_bech32(lnurl_url)
+    png_bytes = await render_card_image(card, qr_data, scale=3)
     output = BytesIO(png_bytes)
 
     return StreamingResponse(

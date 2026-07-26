@@ -193,7 +193,7 @@ async def pay_and_complete(card: GiftCard, bolt11: str) -> Payment:
         wallet_id=card.wallet,
         payment_request=bolt11,
         max_sat=card.amount,
-        memo=f"Redeem gift card {card.id[:8]}",
+        description=f"Redeem gift card {card.id[:8]}",
     )
 
     if payment.status != PaymentState.SUCCESS.value:

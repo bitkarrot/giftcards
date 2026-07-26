@@ -36,54 +36,131 @@
         <q-card-section class="q-pa-none">
           <div class="text-center">
             <h5 class="text-h5 q-my-none">{{ giftCard.amount }} sats</h5>
-            
+
             <p class="text-body2 q-mt-md" v-if="giftCard.sender_name">
               From {{ giftCard.sender_name }}
             </p>
-            
+
             <p class="text-body2 q-mt-md" v-if="giftCard.message">
               {{ giftCard.message }}
             </p>
-            
+
             <p class="text-caption q-mt-sm" v-if="giftCard.recipient_name">
               For {{ giftCard.recipient_name }}
             </p>
-            
-            <q-separator class="q-my-md"></q-separator>
-            
-            <img
-              v-if="giftCard && giftCard.has_design"
-              :src="cardImageUrl"
-              alt="Branded gift card with QR code"
-              class="branded-card-img"
-            />
 
-            <p class="text-body2 q-mt-md" v-if="!giftCard || !giftCard.has_design">
-              Scan with your Lightning wallet to redeem:
-            </p>
-            
-            <div class="row justify-center q-mb-md" v-if="!giftCard || !giftCard.has_design">
+            <q-separator class="q-my-md"></q-separator>
+
+            <!-- bech32 / LUD17 toggle — shared by branded and non-branded cards -->
+            <q-tabs
+              v-model="tab"
+              dense
+              class="text-grey"
+              active-color="primary"
+              indicator-color="primary"
+              align="justify"
+              inline-label
+            >
+              <q-tab name="bech32" icon="qr_code" label="bech32"></q-tab>
+              <q-tab name="lud17" icon="link" label="url (lud17)"></q-tab>
+            </q-tabs>
+
+            <!-- Branded card image (QR baked in server-side, reflects active tab) -->
+            <div class="row justify-center q-mt-md" v-if="giftCard.has_design">
               <img
-                :src="qrCodeUrl"
-                alt="LNURL QR code for gift card redemption"
-                class="qrcode-img"
-                :style="{ width: qrSize + 'px', height: qrSize + 'px' }"
+                :src="cardImageUrl"
+                :key="tab"
+                alt="Branded gift card with QR code"
+                class="branded-card-img"
               />
             </div>
-            
-            <q-btn
-              unelevated
-              color="primary"
-              size="lg"
-              class="q-mb-md"
-              :href="lightningUri"
-              v-if="lightningUri"
+
+            <!-- Plain QR code (no design) — uses lnbits-qrcode with buttons hidden -->
+            <div class="row justify-center q-mt-md" v-else>
+              <lnbits-qrcode
+                :value="lnurl"
+                :show-buttons="false"
+                href=""
+              ></lnbits-qrcode>
+            </div>
+
+            <!-- Action buttons: print, download, NFC, copy — same row for both modes -->
+            <div
+              class="qrcode__buttons row q-gutter-x-sm items-center justify-center no-wrap full-width q-mt-sm"
             >
-              Redeem via Lightning Wallet
-            </q-btn>
-            
+              <q-btn
+                v-if="nfcSupported"
+                :disabled="nfcTagWriting"
+                flat
+                dense
+                class="text-grey"
+                icon="nfc"
+                @click="writeNfcTag"
+              >
+                <q-tooltip>Write NFC Tag</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat
+                dense
+                class="text-grey"
+                icon="print"
+                @click="printCard"
+              >
+                <q-tooltip>Print</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat
+                dense
+                class="text-grey"
+                icon="download"
+                @click="downloadCard"
+              >
+                <q-tooltip>Download</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat
+                dense
+                class="text-grey"
+                :icon="copied ? 'check' : 'content_copy'"
+                @click="copyLnurl"
+              >
+                <q-tooltip>Copy LNURL</q-tooltip>
+              </q-btn>
+            </div>
+
             <q-separator class="q-my-md"></q-separator>
-            
+
+            <!-- LNURL string for manual copy/paste into wallets without QR scan -->
+            <div class="q-mb-md" v-if="lnurlString">
+              <p class="text-caption text-grey q-mb-xs">
+                No QR scanner? Copy this LNURL and paste it into your wallet:
+              </p>
+              <div class="row items-center no-wrap q-gutter-sm">
+                <div class="col">
+                  <q-input
+                    filled
+                    dense
+                    readonly
+                    :model-value="lnurlString"
+                    class="lnurl-input"
+                    input-class="lnurl-text"
+                  ></q-input>
+                </div>
+                <div class="col-auto">
+                  <q-btn
+                    flat
+                    dense
+                    color="primary"
+                    :icon="copied ? 'check' : 'content_copy'"
+                    :label="copied ? 'Copied' : 'Copy'"
+                    @click="copyLnurl"
+                  ></q-btn>
+                </div>
+              </div>
+            </div>
+
+            <q-separator class="q-my-md" v-if="lnurlString"></q-separator>
+
             <p class="text-caption">
               Expires: {{ giftCard.expires_at ? formatDate(giftCard.expires_at) : 'No expiration' }}
             </p>
@@ -134,22 +211,26 @@
 </template>
 
 <style>
-.qrcode-img {
-  max-width: 300px;
-  max-height: 300px;
-}
-
 .branded-card-img {
   max-width: 400px;
   width: 100%;
   height: auto;
 }
 
+.lnurl-input .q-field__control {
+  border-radius: 4px;
+}
+
+.lnurl-text {
+  font-family: monospace;
+  font-size: 11px;
+  word-break: break-all;
+  line-height: 1.3;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
 @media (max-width: 768px) {
-  .qrcode-img {
-    max-width: 240px;
-    max-height: 240px;
-  }
   .branded-card-img {
     max-width: 320px;
   }
