@@ -1,5 +1,8 @@
-from lnbits.tasks import run_interval
+import asyncio
+
 from loguru import logger
+
+from lnbits.settings import settings
 
 
 async def _expire_gift_cards() -> None:
@@ -21,4 +24,6 @@ async def _expire_gift_cards() -> None:
 
 async def wait_for_expiry() -> None:
     """Periodic expiry sweep registered with create_permanent_unique_task."""
-    await run_interval(60, _expire_gift_cards)()
+    while settings.lnbits_running:
+        await _expire_gift_cards()
+        await asyncio.sleep(60)
