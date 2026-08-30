@@ -125,3 +125,23 @@ async def m005_template_images(db):
         );
         """
     )
+
+
+async def m006_add_fee_columns(db):
+    """Add per-card fee reserve columns.
+
+    fee_mode: "default" (global settings), "percentage", or "manual"
+    fee_percent: percentage of card amount (used when fee_mode="percentage")
+    fee_sats: fixed fee in sats (used when fee_mode="manual")
+    """
+    for col, col_def in [
+        ("fee_mode", "TEXT DEFAULT 'default'"),
+        ("fee_percent", "REAL"),
+        ("fee_sats", "INTEGER"),
+    ]:
+        try:
+            await db.execute(
+                f"ALTER TABLE giftcards.cards ADD COLUMN {col} {col_def}"
+            )
+        except Exception:
+            pass  # Column already exists

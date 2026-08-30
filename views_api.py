@@ -164,7 +164,7 @@ async def api_create_card(
             data=data,
             issuer_wallet_id=wallet.wallet.id,
             user_id=wallet.wallet.user,
-            base_url=str(request.base_url),
+            base_url=_public_base_url(request),
         )
         return response.dict()
     except Exception as e:
@@ -230,6 +230,9 @@ async def api_bulk_create(
                     sender_name=csv_row.sender_name,
                     message=csv_row.message,
                     design=design,
+                    fee_mode=data.fee_mode,
+                    fee_percent=data.fee_percent,
+                    fee_sats=data.fee_sats,
                 ))
         else:
             # Same-amount mode — build count identical CreateGiftCard objects
@@ -242,6 +245,9 @@ async def api_bulk_create(
                     expires_at=data.expires_at,
                     recipient_email=data.recipient_email,
                     design=data.design,
+                    fee_mode=data.fee_mode,
+                    fee_percent=data.fee_percent,
+                    fee_sats=data.fee_sats,
                 )
                 for _ in range(data.count)
             ]
@@ -250,7 +256,7 @@ async def api_bulk_create(
             rows=rows,
             issuer_wallet_id=wallet.wallet.id,
             user_id=wallet.wallet.user,
-            base_url=str(request.base_url),
+            base_url=_public_base_url(request),
         )
         return {
             "created": len(responses),
@@ -702,6 +708,9 @@ async def api_get_card_detail(
         token_hash=card.token_hash,
         redemption_url=card.redemption_url if include_link else None,
         design=_parse_design_config(card) if (card.template_name or card.template_asset_id) else None,
+        fee_mode=card.fee_mode or "default",
+        fee_percent=card.fee_percent,
+        fee_sats=card.fee_sats,
     )
 
 
@@ -862,7 +871,7 @@ async def api_deliver_email(
     card.recipient_email = data.recipient_email
 
     # Build claim URL (the claim page, NOT the redemption link — D-12)
-    claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
+    claim_url = f"{_public_base_url(request)}/giftcards/claim"
 
     try:
         await send_gift_card_email(
@@ -909,14 +918,14 @@ async def api_claim_cards(data: ClaimRequest, request: Request) -> dict:
         # Generate magic link
         # Use the first card's wallet for scoping
         magic_token = await generate_magic_link(data.email, "claim_flow")
-        magic_link_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim/{magic_token}"
+        magic_link_url = f"{_public_base_url(request)}/giftcards/claim/{magic_token}"
 
         # M-2: send the notification email via a fire-and-forget background
         # task so the response latency does not leak whether cards exist
         # (D-14 — no timing-based email enumeration). The DB row is already
         # committed, so a crash here does not lose the magic link.
         first_card = pending[0]
-        claim_url = f"{str(request.base_url).rstrip('/')}/giftcards/claim"
+        claim_url = f"{_public_base_url(request)}/giftcards/claim"
         asyncio.create_task(
             _send_notification_safely(
                 sender_name=first_card.get("sender_name") or "Anonymous",

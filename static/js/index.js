@@ -18,7 +18,10 @@ window.PageGiftCards = {
           sender_name: '',
           message: '',
           expires_at: null,
-          designMode: 'none'
+          designMode: 'none',
+          fee_mode: 'default',
+          fee_percent: null,
+          fee_sats: null
         },
         result: null
       },
@@ -94,7 +97,10 @@ window.PageGiftCards = {
           sender_name: '',
           message: '',
           expires_at: null,
-          designMode: 'none'
+          designMode: 'none',
+          fee_mode: 'default',
+          fee_percent: null,
+          fee_sats: null
         },
         csvData: {
           designMode: 'none'
@@ -177,6 +183,13 @@ window.PageGiftCards = {
           label: 'Status',
           field: 'status',
           sortable: true
+        },
+        {
+          name: 'fee',
+          align: 'left',
+          label: 'Fee',
+          field: row => this.formatFeeLabel(row),
+          sortable: false
         },
         {
           name: 'delivery',
@@ -429,7 +442,10 @@ window.PageGiftCards = {
         sender_name: '',
         message: '',
         expires_at: null,
-        designMode: 'none'
+        designMode: 'none',
+        fee_mode: 'default',
+        fee_percent: null,
+        fee_sats: null
       }
       this.createDialog.result = null
       // Reset card designer to defaults
@@ -517,6 +533,17 @@ window.PageGiftCards = {
       if (!dateString) return ''
       const date = new Date(dateString)
       return date.toLocaleDateString()
+    },
+
+    formatFeeLabel(card) {
+      const mode = card.fee_mode || 'default'
+      if (mode === 'percentage') {
+        return card.fee_percent != null ? card.fee_percent + '%' : '—'
+      }
+      if (mode === 'manual') {
+        return card.fee_sats != null ? card.fee_sats + ' sats' : '—'
+      }
+      return 'Default'
     },
 
     getStatusColor(status) {
@@ -911,7 +938,10 @@ window.PageGiftCards = {
         sender_name: '',
         message: '',
         expires_at: null,
-        designMode: 'none'
+        designMode: 'none',
+        fee_mode: 'default',
+        fee_percent: null,
+        fee_sats: null
       }
       this.bulkDialog.csvFile = null
       this.bulkDialog.csvRows = []
@@ -988,7 +1018,10 @@ window.PageGiftCards = {
             sender_name: this.bulkDialog.sameData.sender_name || null,
             message: this.bulkDialog.sameData.message || null,
             expires_at: this.bulkDialog.sameData.expires_at || null,
-            design: design
+            design: design,
+            fee_mode: this.bulkDialog.sameData.fee_mode || 'default',
+            fee_percent: this.bulkDialog.sameData.fee_percent || null,
+            fee_sats: this.bulkDialog.sameData.fee_sats || null
           }
           await LNbits.api.request(
             'POST',

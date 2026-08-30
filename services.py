@@ -108,6 +108,9 @@ async def create_gift_card(
         qr_config=qr_config,
         text_config=text_config,
         recipient_email=data.recipient_email,
+        fee_mode=data.fee_mode,
+        fee_percent=data.fee_percent,
+        fee_sats=data.fee_sats,
     )
 
     # Save card to database
@@ -133,6 +136,9 @@ async def create_gift_card(
         created_at=card.created_at,
         redeemed_at=card.redeemed_at,
         expired_at=card.expired_at,
+        fee_mode=card.fee_mode or "default",
+        fee_percent=card.fee_percent,
+        fee_sats=card.fee_sats,
     )
 
     redemption_url = f"{base_url.rstrip('/')}/giftcards/redeem/{raw_token}"

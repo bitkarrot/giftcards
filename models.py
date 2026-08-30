@@ -167,11 +167,38 @@ class CreateGiftCard(BaseModel):
     expires_at: Optional[datetime] = None
     recipient_email: Optional[str] = None
     design: Optional[DesignConfig] = None
+    # Per-card fee reserve for the redemption Lightning payment.
+    # "default"  — use global LNBITS_RESERVE_FEE_MIN/PERCENT settings
+    # "percentage" — fee_reserve = amount * fee_percent / 100
+    # "manual"   — fee_reserve = fee_sats (fixed sats)
+    fee_mode: str = "default"
+    fee_percent: Optional[float] = None
+    fee_sats: Optional[int] = None
 
     @validator("amount")
     def amount_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError("Amount must be greater than 0")
+        return v
+
+    @validator("fee_mode")
+    def _validate_fee_mode(cls, v):
+        if v not in ("default", "percentage", "manual"):
+            raise ValueError("fee_mode must be 'default', 'percentage', or 'manual'")
+        return v
+
+    @validator("fee_percent")
+    def _validate_fee_percent(cls, v, values):
+        if values.get("fee_mode") == "percentage":
+            if v is None or v < 0:
+                raise ValueError("fee_percent is required and must be >= 0 when fee_mode='percentage'")
+        return v
+
+    @validator("fee_sats")
+    def _validate_fee_sats(cls, v, values):
+        if values.get("fee_mode") == "manual":
+            if v is None or v < 0:
+                raise ValueError("fee_sats is required and must be >= 0 when fee_mode='manual'")
         return v
 
     @validator("recipient_email")
@@ -224,6 +251,9 @@ class GiftCard(BaseModel):
     email_subject: Optional[str] = None
     email_body: Optional[str] = None
     email_template: Optional[str] = None
+    fee_mode: str = "default"
+    fee_percent: Optional[float] = None
+    fee_sats: Optional[int] = None
 
 
 class GiftCardSummary(BaseModel):
@@ -240,6 +270,9 @@ class GiftCardSummary(BaseModel):
     redemption_url: Optional[str] = None
     recipient_email: Optional[str] = None
     email_status: Optional[str] = None
+    fee_mode: str = "default"
+    fee_percent: Optional[float] = None
+    fee_sats: Optional[int] = None
 
 
 class PublicGiftCard(BaseModel):
@@ -407,6 +440,9 @@ class BulkCreateRequest(BaseModel):
     design: Optional[DesignConfig] = None
     rows: Optional[List[CSVRow]] = None
     design_mode: Optional[str] = None
+    fee_mode: str = "default"
+    fee_percent: Optional[float] = None
+    fee_sats: Optional[int] = None
 
     @validator("count")
     def _max_count(cls, v):
@@ -487,3 +523,6 @@ class CardDetailResponse(BaseModel):
     token_hash: Optional[str] = None
     redemption_url: Optional[str] = None
     design: Optional[DesignConfig] = None
+    fee_mode: str = "default"
+    fee_percent: Optional[float] = None
+    fee_sats: Optional[int] = None
